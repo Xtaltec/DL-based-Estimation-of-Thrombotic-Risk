@@ -1,0 +1,11 @@
+
+*.vtp
+*.dataset
+*.pt
+*.data
+*.npy
+*.pyc
+*.pyc
+geometric/code/__pycache__/modelGeo.cpython-37.pyc
+*.mat
+fcn/code/WriteVTK.m
