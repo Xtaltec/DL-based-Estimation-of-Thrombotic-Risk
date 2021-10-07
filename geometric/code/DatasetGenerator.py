@@ -10,6 +10,7 @@ from glob import glob
 from ntpath import basename
 from pathlib import Path
 import os, re, shutil, getpass, numpy as np, pyvista as pv
+from os.path import join
 
 import torch
 import torch_geometric.data as data
@@ -18,17 +19,18 @@ from torch_geometric import transforms as T
 from sklearn.preprocessing import PowerTransformer
 
 #%%  Initialization
+rotation = 0 # Aleatory rotation of LAA
 
 if os.name == 'nt' and getpass.getuser()=='Xabier':
     base_path = 'C:\\Users\\Xabier\\PhD\\Frontiers\\geo\\data\\' # The general path to the LAA .vtk
 elif os.name == 'nt' and getpass.getuser()=='u164110':    
-    base_path = 'D:\\PhD\\Frontiers\\GitHub\\geometric\\data\\' # The general path to the LAA .vtk
+    base_path = 'D:\\PhD\\DL\\Frontiers\\GitHub\\geometric\\data\\' # The general path to the LAA .vtk
 elif os.name == 'posix':
     base_path = '/media/u164110/Data/PhD/Frontiers/geo/data/' # The general path to the LAA .vtk
 
 name = 'ECAP' #Define the name of the dataset. Options: ECAP,Burdeos,ECAP_rot,ECAPrem
-path_in = base_path+'LAA_Smoothed' # Base directory    
-path_torch = base_path+'TorchData/' # Output directory for temporal torch dataset
+path_in = join(base_path,'LAA_Smoothed') # Base directory    
+path_torch = join(base_path,'TorchData/') # Output directory for temporal torch dataset
 
 #%% Function definitions   
 
@@ -40,6 +42,9 @@ def torch_transform(graph):
     # Convert faces to edges through Face to Edge
     # Generate Mesh normals
     # Add a constant value to each node feature through Constant
+    
+    rot = T.RandomRotate(360)
+    graph = rot(graph) if rotation == 1 else graph
     
     pre_transform = T.Compose([T.Constant(value=1),T.GenerateMeshNormals(),T.FaceToEdge(), T.Cartesian()])
     transformed = pre_transform(graph) # Apply transform
@@ -117,9 +122,21 @@ for g in geo:
 
 data_final = ECAPdataset(path_in)
 
+# Test rotation of geometries
+
+from random import random
+plotter = pv.Plotter() 
+
+for i in range(10):
+    
+    plotter.add_mesh(pv.PolyData(data_final[i].pos.numpy()), color=[random(), random(), random()], label=str(i))
+    
+plotter.add_legend() 
+plotter.show()   
+
 # Scale the curvature data
 scaler = PowerTransformer()
 data_final.data.curve = torch.tensor(scaler.fit_transform(data_final.data.curve)).float()
 
 # Save the dataset
-torch.save(data_final,base_path+name+'.dataset')
+torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '') +'.dataset'))
