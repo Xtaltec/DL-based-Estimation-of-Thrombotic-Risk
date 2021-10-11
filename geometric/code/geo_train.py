@@ -283,6 +283,13 @@ for hyper in product(*param_values):
         
         dataset = torch.load(join(data_path,config['Dataset']+'.dataset'))
         
+        # Normalize vertex-wise coordinates
+        norm = T.NormalizeScale()
+        norm(dataset.data)
+        
+        num_cases = dataset.len() # Number of cases
+        indices = list(np.arange(num_cases)) # Indices of all cases
+        
         # Shuffle the dataset
         dataset = dataset.shuffle()
 
