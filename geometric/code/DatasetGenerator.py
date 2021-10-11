@@ -19,10 +19,10 @@ from torch_geometric import transforms as T
 from sklearn.preprocessing import PowerTransformer
 
 #%%  Initialization
-rotation = 0 # Aleatory rotation of LAA
+rotation = 1 # Aleatory rotation of LAA
 
 if os.name == 'nt' and getpass.getuser()=='Xabier':
-    base_path = 'C:\\Users\\Xabier\\PhD\\Frontiers\\geo\\data\\' # The general path to the LAA .vtk
+    base_path = 'C:\\Users\\Xabier\\PhD\\Frontiers\\GitHub\\geometric\\data\\' # The general path to the LAA .vtk
 elif os.name == 'nt' and getpass.getuser()=='u164110':    
     base_path = 'D:\\PhD\\DL\\Frontiers\\GitHub\\geometric\\data\\' # The general path to the LAA .vtk
 elif os.name == 'posix':
@@ -119,11 +119,17 @@ for g in geo:
 
 #%% Create dataset instance 
 
-data_final = ECAPdataset(path_in)
+data_final = ECAPdataset(path_in)  
 
-# Test rotation of geometries
+# Scale the curvature data
+scaler = PowerTransformer()
+data_final.data.curve = torch.tensor(scaler.fit_transform(data_final.data.curve)).float()
 
-from random import random
+# Save the dataset
+torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '_New') +'.dataset'))
+
+#%% Test rotation of geometries
+
 plotter = pv.Plotter() 
 
 for i in range(10):
@@ -134,11 +140,4 @@ for i in range(10):
     plotter.add_mesh(m, scalars='ECAP', label=str(i))
     
 plotter.add_legend() 
-plotter.show()   
-
-# Scale the curvature data
-scaler = PowerTransformer()
-data_final.data.curve = torch.tensor(scaler.fit_transform(data_final.data.curve)).float()
-
-# Save the dataset
-torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '_New') +'.dataset'))
+plotter.show() 
