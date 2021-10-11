@@ -52,7 +52,6 @@ def torch_transform(graph):
     return transformed
 
 # PyTorch InMemoryDataset class
-
 class ECAPdataset(InMemoryDataset):
     def __init__(self, root, transform=None, pre_transform=None):
         super(ECAPdataset, self).__init__(root, transform, pre_transform)
@@ -104,7 +103,7 @@ for g in geo:
     ECAP = torch.tensor(mesh.point_arrays['ECAP_Both']).unsqueeze(1).float()   
     
     # Obtain the faces from the .vtk files
-    face = torch.tensor(np.moveaxis(mesh.faces.reshape(-1, 4)[:,1:],0,1))
+    face = torch.tensor(np.moveaxis(mesh.faces.reshape(-1,4)[:,1:],0,1))
     
     # Compute the point-wise curvature
     curve = torch.tensor(mesh.curvature()).float().unsqueeze(1)
@@ -129,7 +128,10 @@ plotter = pv.Plotter()
 
 for i in range(10):
     
-    plotter.add_mesh(pv.PolyData(data_final[i].pos.numpy()), color=[random(), random(), random()], label=str(i))
+    m = pv.PolyData(data_final[i].pos.numpy(),mesh.faces)
+    m.point_arrays['ECAP'] = data_final[i].y.numpy()
+    
+    plotter.add_mesh(m, scalars='ECAP', label=str(i))
     
 plotter.add_legend() 
 plotter.show()   
@@ -139,4 +141,4 @@ scaler = PowerTransformer()
 data_final.data.curve = torch.tensor(scaler.fit_transform(data_final.data.curve)).float()
 
 # Save the dataset
-torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '') +'.dataset'))
+torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '_New') +'.dataset'))

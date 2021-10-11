@@ -8,9 +8,9 @@ Input hyperparameters can be set up through argparse.
 
 import os, random, torch , argparse, numpy as np, pandas as pd
 from pathlib import Path
-from os.path import normpath
+from os.path import normpath,join
 from itertools import product
-from hyperdash import Experiment
+import wandb # Hyperdash is not supported anymore. Replaced by Weights & Bias
 from torch.nn import DataParallel
 from torch_geometric.data import DataLoader
 import torch_geometric.transforms as T
@@ -20,19 +20,23 @@ import torch_geometric.transforms as T
 def parseArguments():    
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path", "-p",  type=str, default='C:\\Users\\Xabier\\PhD\\Frontiers\\GitHub\\geometric',
-                        help="Base path with the code and data folders")
-    parser.add_argument("--data", "-d",  type=str, default='ECAP',
+    parser.add_argument("--project", "-pro",  type=str, default='Frontiers',
+                        help="Choose the name of the project to be logged into W&B.")
+    parser.add_argument("--group", "-gr",  type=str, default='Cross',
+                        help="Choose the name of the group of the runs.")
+    parser.add_argument("--name", "-na",  type=str, default='Run',
+                        help="Choose the name of each of the runs.")
+    parser.add_argument("--data", "-d",  nargs='+', type=str, default=['ECAP','A'],
                         help="Choose dataset to be employed when running the code.")
-    parser.add_argument("--experiment", "-exp",  type=str, default='Prueba',
-                        help="Choose the name of the experiment to be logged into hyperdash.")
+    parser.add_argument("--path", "-p",  type=str, default='D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
+                        help="Base path with the code and data folders")
     parser.add_argument("--folds", "-f", type=int, default=8,
                         help="Number of folds if cross-validation == True (Not list).")
-    parser.add_argument("--num_epoch", "-ep",  nargs='+', type=int, default=[300],
+    parser.add_argument("--num_epoch", "-ep",  nargs='+', type=int, default=[100],
                         help="Number of epochs")
     parser.add_argument("--learn_rate", "-lr",  nargs='+', type=float, default=[0.001],
                         help="Learning rate")
-    parser.add_argument("--batch_size", "-bs", nargs='+',type=int, default=[2],
+    parser.add_argument("--batch_size", "-bs", nargs='+',type=int, default=[16],
                         help="Number of folds if cross-validation == True")
     parser.add_argument("--drop_rate", "-dr",  nargs='+', type=float, default=[0.1],
                         help="Drop rate")
@@ -69,8 +73,8 @@ args = parseArguments()
 
 #%% Change dir and import models
 
-os.chdir(args.path+'\\code\\')
-data_path = args.path +'\\data\\'
+os.chdir(join(args.path,'code'))
+data_path = join(args.path,'data')
     
 from modelGeo import ECAPdataset # If I do not import the dataset class it raises and error
 from modelGeo import GeometricPointNet
@@ -194,7 +198,8 @@ thresholds = args.threshold
 
 parameters = dict(
      
-    folds = [args.folds] # Cross-validation folds
+    dat = list(args.data)
+    ,folds = [args.folds] # Cross-validation folds
     ,num_epoch = list(args.num_epoch) # Number of epochs for each fold
     ,learn_rate = list(args.learn_rate) # Learning rate
     ,batch_size = list(args.batch_size) # Batch size
@@ -211,8 +216,11 @@ parameters = dict(
     ,cross = [args.cross] # If True perform cross-validation
     
 )
-    
-#%% Datafram to store all the data according to the employed keys
+
+hyp_name  = ["Dataset","Folds","Epochs", "Learning rate", "Batch size", "Drop rate","Layer depth", "Hidden features","Activation"
+         ,"Spline or Sage", "Kernel size", "Weight decay","Split", "Seed", 'Loss','Cross-validation']
+
+#%% Dataframe to store all the data according to the employed keys
 
 if parameters['cross'][0] == True:
     
@@ -226,7 +234,6 @@ df['Val_Mae'],df['Test_Mae']= df['Val_Mae'].astype(float),df['Test_Mae'].astype(
 conf_all = np.zeros([len(thresholds),4])
 
 # Set experiment name
-experiment = args.experiment 
 param_values = [v for v in parameters.values()]
 
 #%% Grid search loop
@@ -238,37 +245,25 @@ for hyper in product(*param_values):
     i+=1    
 
     #%% Create log in hyperdash for monitoring
-    
-    exp = Experiment(experiment) # Log hyperparameters in hyperdash
-    
-    fold_num = exp.param("Folds", hyper[0])  
-    num_epoch = exp.param("Epoch number", hyper[1]) 
-    lr = exp.param("Learning rate", hyper[2]) 
-    batch_size = exp.param("Batch size", hyper[3]) 
-    drop_rate = exp.param("Drop rate", hyper[4]) 
-    depth = exp.param("Layer depth", hyper[5]) 
-    hidden = exp.param("Hidden features", hyper[6])
-    act = exp.param("Activation", hyper[7]) 
-    spline = exp.param("Spline or Sage", hyper[8]) 
-    kernel_size = exp.param("Kernel size", hyper[9]) 
-    wd = exp.param("Weight decay", hyper[10]) 
-    split = exp.param("Split", hyper[11]) 
-    seed = exp.param("Seed", hyper[12]) 
-    loss_func = exp.param('Loss function', hyper[13])
-    cross = exp.param('Cross-validation', hyper[14])
+    config = dict(zip(hyp_name,hyper))
+    run = wandb.init(project=args.project, group=args.group, name=config['Dataset'], job_type='Run',config=config)
+
+    wandb.define_metric("Train loss", summary="min")
+    wandb.define_metric("Validation loss", summary="min")
+    wandb.define_metric("Test loss", summary="min")
     
     print('\n')
     
     #%% Save results depending on experiment
   
-    result_path = normpath(os.path.join(args.path,'results/',experiment))
+    result_path = normpath(join(args.path,'results/','_'.join([args.project,args.group,args.name])))
     Path(result_path).mkdir(parents=True, exist_ok=True)
 
     #%% Load dataset and divide the data in training and testing
     
-    if i == 1:
+    if config['Cross-validation'] == False:
         
-        dataset = torch.load(data_path+args.data+'.dataset')
+        dataset = torch.load(join(data_path,config['Dataset']+'.dataset'))
     
         # Normalize vertex-wise coordinates
         norm = T.NormalizeScale()
@@ -276,30 +271,27 @@ for hyper in product(*param_values):
         
         num_cases = dataset.len() # Number of cases
         indices = list(np.arange(num_cases)) # Indices of all cases
+        
+        torch.manual_seed(config['Seed']) if config['Seed'] != None else False # Set random seed if not None
+        
+        train_all = random.sample(indices,int(round(num_cases*config['Split'])))
+        val_ind = random.sample(train_all,int(np.ceil(len(train_all)*0.1)))
+        train_ind = list(np.setdiff1d(train_all,val_ind))
+        test_ind = list(np.setdiff1d(indices,train_all))
+        
+    elif i == 1 and config['Cross-validation'] == True:
+        
+        dataset = torch.load(join(data_path,config['Dataset']+'.dataset'))
+        
+        # Shuffle the dataset
+        dataset = dataset.shuffle()
 
-        if cross == True:
-            
-            # Shuffle the dataset
-            dataset = dataset.shuffle()
-    
-            # Divide the dataset in folds
-            folds = np.array_split(indices, fold_num)
-            
-        else:
-            
-            torch.manual_seed(seed) if seed != None else False # Set random seed if not None
-            
-            train_all = random.sample(indices,int(round(num_cases*split)))
-            val_ind = random.sample(train_all,int(np.ceil(len(train_all)*0.1)))
-            train_ind = list(np.setdiff1d(train_all,val_ind))
-            test_ind = list(np.setdiff1d(indices,train_all))
-            
-        # Initialize place holder for best accuracy (MAE)  
-        best_val = 1000
+        # Divide the dataset in folds
+        folds = np.array_split(indices, config['Folds'])
             
     #%% Choose each fold for each iteration and loader instantiation
     
-    if cross == True:    
+    if config['Cross-validation'] == True:    
         test_ind = folds[i-1] # Select testing cases for the iteration
         train_ind = list(np.setdiff1d(indices, test_ind)) # Remaining cases for training
         val_ind = random.sample(list(train_ind),round(len(train_ind)*0.1)) # Validation case %10 of training data
@@ -310,7 +302,7 @@ for hyper in product(*param_values):
     print(train_dataset);print(val_dataset);print(test_dataset)
     
     # Pass the data to the loader
-    train_loader,val_loader,test_loader = DataLoader(train_dataset, batch_size=batch_size),DataLoader(val_dataset, batch_size=batch_size),DataLoader(test_dataset, batch_size=1) 
+    train_loader,val_loader,test_loader = DataLoader(train_dataset, batch_size=config['Batch size']),DataLoader(val_dataset, batch_size=config['Batch size']),DataLoader(test_dataset, batch_size=1) 
    
     #%% Check GPU device availability
     
@@ -320,7 +312,7 @@ for hyper in product(*param_values):
      
     #%% Create model instance
     
-    model = GeometricPointNet(spline,depth,hidden,drop_rate,kernel_size,act)
+    model = GeometricPointNet(config['Spline or Sage'],config['Layer depth'],config['Hidden features'],config['Drop rate'],config['Kernel size'],config['Activation'])
     
     # If more than one GPU available paralelize
     if torch.cuda.device_count() > 1: 
@@ -336,21 +328,21 @@ for hyper in product(*param_values):
     
     #%% Model loss function and optimizer
     
-    if loss_func == 'MSE':
+    if config['Loss'] == 'MSE':
         crit = torch.nn.MSELoss()
-    elif loss_func == 'SmoothL1':
+    elif config['Loss'] == 'SmoothL1':
         crit = torch.nn.SmoothL1Loss()
     else:
         crit = torch.nn.L1Loss()
         
-    optimizer = torch.optim.Adam(model.parameters(),lr=lr, weight_decay=wd)
+    optimizer = torch.optim.Adam(model.parameters(),lr=config['Learning rate'], weight_decay=config['Weight decay'])
     
     #%% Training loop    
     
-    results = np.zeros([num_epoch,3])
-    thres = np.zeros([num_epoch,len(thresholds),4])
+    results = np.zeros([config['Epochs'],3])
+    thres = np.zeros([config['Epochs'],len(thresholds),4])
     
-    for epoch in range(num_epoch):
+    for epoch in range(config['Epochs']):
         
         loss = train(train_loader)
         
@@ -358,9 +350,8 @@ for hyper in product(*param_values):
         loss_test,conf_test= evaluate(test_loader,len(test_dataset))
                         
         print('\nEpoch: {:03d}'. format(epoch))
-        exp.metric("Training loss", loss)
-        exp.metric("Validation loss", loss_val)
-        exp.metric("Test loss", loss_test)
+        
+        wandb.log({"Train loss": loss, "Validation loss": loss_val, "Test loss": loss_test})
     
         test_metric = loss_val 
        
@@ -385,13 +376,13 @@ for hyper in product(*param_values):
     
     #%% Cleanup and mark successfull completion
     
-    exp.end()
+    run.finish()
     
 #%% Print experiment summary
 
-exp = Experiment(experiment) # Log hyperparameters in hyperdash
+run = wandb.init(project=args.project, group=args.group, name=args.name+'_Summary', job_type= 'Summary',config=config) # Log hyperparameters WandB
 
-df.to_pickle(os.path.join(result_path,'..','dataframe_'+experiment+'.npy'))
+df.to_pickle(os.path.join(result_path,'..','dataframe_'+'_'.join([args.project,args.group,args.name])+'.npy'))
 conf_all = conf_all/i
     
 keys = list(parameters.keys())
@@ -400,7 +391,7 @@ print('\n\nGeneral results:')
 
 #%% Plot cross-validation result
 
-if cross == True:
+if config['Cross-validation'] == True:
     
     mean = df.Val_Mae.mean()
     std = df.Val_Mae.std()
@@ -437,7 +428,7 @@ for i in keys:
         for j,k,m in zip(mean.index,mean.values,std.values):
             print(str(j)+': {:.5f} + {:.5f}'.format(k,m))
 
-if cross == False:
+if config['Cross-validation'] == False:
     group_by = [keys.index(i) for i in results_by] 
     
     for g in group_by:
@@ -474,6 +465,6 @@ for n,i in enumerate(conf_all):
 
 #%% Cleanup and mark successfull completion
 
-exp.end()
+run.finish()
 
 
