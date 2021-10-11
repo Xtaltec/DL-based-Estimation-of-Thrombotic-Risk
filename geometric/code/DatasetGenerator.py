@@ -126,7 +126,7 @@ scaler = PowerTransformer()
 data_final.data.curve = torch.tensor(scaler.fit_transform(data_final.data.curve)).float()
 
 # Save the dataset
-torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '_New') +'.dataset'))
+torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '') +'.dataset'))
 
 #%% Test rotation of geometries
 
