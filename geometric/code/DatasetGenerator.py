@@ -29,7 +29,7 @@ elif os.name == 'posix':
 
 inp_folder = 'LAA_Smoothed'
 name = 'ECAP' # Define the name of the dataset. Options: ECAP,Burdeos,ECAP_rot,ECAPrem
-rotation = 1 # Aleatory rotation of LAA
+rotation = 0 # Aleatory rotation of LAA
 log_transform = 1 # Log transform ECAP data
 
 path_in = join(base_path,inp_folder) # Base directory    
@@ -102,6 +102,8 @@ for g in geo:
     
     coord = pos
     
+    connectivity = mesh.faces
+    
     # Target feature of each node (ECAP)
     try:
         ECAP = torch.tensor(mesh.point_arrays['ECAP_Both']).unsqueeze(1).float()   
@@ -115,7 +117,7 @@ for g in geo:
     curve = torch.tensor(mesh.curvature()).float().unsqueeze(1)
     
     # Create graph data class
-    graph = data.Data(case = case, y=ECAP, face=face, pos=pos, coord=coord, curve=curve)
+    graph = data.Data(case = case, y=ECAP, face=face, pos=pos, coord=coord, curve=curve, connectivity=connectivity)
     
     # Make transformations
     transformed = torch_transform(graph)

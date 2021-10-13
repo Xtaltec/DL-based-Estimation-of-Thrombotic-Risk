@@ -6,7 +6,7 @@ Input hyperparameters can be set up through argparse.
 @author: Xabier Morales Ferez - xabier.morales@upf.edu
 """
 
-import os, random, torch , argparse, numpy as np, pandas as pd
+import os, random, torch , argparse, numpy as np, pandas as pd, pyvista as pv
 from pathlib import Path
 from os.path import normpath,join
 from itertools import product
@@ -14,6 +14,7 @@ import wandb # Hyperdash is not supported anymore. Replaced by Weights & Bias
 from torch.nn import DataParallel
 from torch_geometric.data import DataLoader
 import torch_geometric.transforms as T
+from torchvision.utils import make_grid
 
 #%% Parse arguments
 
@@ -22,11 +23,11 @@ def parseArguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", "-pro",  type=str, default='Frontiers',
                         help="Choose the name of the project to be logged into W&B.")
-    parser.add_argument("--group", "-gr",  type=str, default='Cross',
+    parser.add_argument("--group", "-gr",  type=str, default='Prueba',
                         help="Choose the name of the group of the runs.")
     parser.add_argument("--name", "-na",  type=str, default='Run',
                         help="Choose the name of each of the runs.")
-    parser.add_argument("--data", "-d",  nargs='+', type=str, default=['ECAP','A'],
+    parser.add_argument("--data", "-d",  nargs='+', type=str, default=['ECAP'],
                         help="Choose dataset to be employed when running the code.")
     parser.add_argument("--path", "-p",  type=str, default='D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
                         help="Base path with the code and data folders")
@@ -353,7 +354,7 @@ for hyper in product(*param_values):
     
     #%% Training loop    
     
-    results = np.zeros([config['Epochs'],3])
+    results = 1000*np.ones([config['Epochs'],3])
     thres = np.zeros([config['Epochs'],len(thresholds),4])
     
     for epoch in range(config['Epochs']):
@@ -367,9 +368,40 @@ for hyper in product(*param_values):
         
         wandb.log({"Train loss": loss, "Validation loss": loss_val, "Test loss": loss_test})
         
-        if i != 1 and loss_test < min(results[epoch,2]):
+        if loss_test < np.min(results[:,2]):
             
+            n_images = 5
             labels,predictions,indices = predict(test_loader)
+            
+            image_GT,image_PR = [],[]
+            for k in range(n_images):
+                
+                or_case = int(np.where(np.array(dataset.data.case)==indices[k])[0][0])
+                mesh_GT = pv.PolyData(dataset[or_case].coord.numpy(),dataset[or_case].connectivity)
+                mesh_PR = pv.PolyData(dataset[or_case].coord.numpy(),dataset[or_case].connectivity)
+                
+                mesh_GT.point_arrays['ECAP'] = labels[i]
+                mesh_PR.point_arrays['ECAP'] = predictions[i]
+                
+                pv.set_plot_theme("document") # White background
+                p_GT = pv.Plotter(shape=(1,1), border=False, title = str(indices[k]),window_size=[200,300])
+                p_PR = pv.Plotter(shape=(1,1), border=False,window_size=[200,300])
+    
+                p_GT.add_text("Ground truth",font_size=15)
+                p_GT.add_mesh(mesh_GT, scalars='ECAP',clim=[0,6], 
+                                 scalar_bar_args=dict(position_x = 0.8,label_font_size=10,title_font_size=15))
+               
+                p_PR.add_text("Prediction",font_size=15)
+                p_PR.add_mesh(mesh_PR, scalars='ECAP',clim=[0,6],show_scalar_bar=False)
+                
+                image_GT += [p_GT.show(return_img=True)[1]]
+                image_PR += [p_PR.show(return_img=True)[1]]
+                
+            image = np.moveaxis(np.concatenate([np.stack(image_GT,axis=0),np.stack(image_PR,axis=0)]),3,1).astype('int')/255
+            image_grid = make_grid(torch.tensor(image), nrow=n_images)
+            images = wandb.Image(image_grid,caption = "Epoch "+str(epoch))
+            wandb.log({"Prediction": images})
+
         
         results[epoch,0],results[epoch,1],results[epoch,2]= loss,loss_val,loss_test
         thres[epoch,:,:]=conf_test
