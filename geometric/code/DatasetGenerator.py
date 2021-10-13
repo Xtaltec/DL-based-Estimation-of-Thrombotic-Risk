@@ -19,7 +19,6 @@ from torch_geometric import transforms as T
 from sklearn.preprocessing import PowerTransformer
 
 #%%  Initialization
-rotation = 1 # Aleatory rotation of LAA
 
 if os.name == 'nt' and getpass.getuser()=='Xabier':
     base_path = 'C:\\Users\\Xabier\\PhD\\Frontiers\\GitHub\\geometric\\data\\' # The general path to the LAA .vtk
@@ -28,8 +27,12 @@ elif os.name == 'nt' and getpass.getuser()=='u164110':
 elif os.name == 'posix':
     base_path = '/media/u164110/Data/PhD/Frontiers/geo/data/' # The general path to the LAA .vtk
 
-name = 'ECAP' #Define the name of the dataset. Options: ECAP,Burdeos,ECAP_rot,ECAPrem
-path_in = join(base_path,'LAA_Smoothed') # Base directory    
+inp_folder = 'LAA_Smoothed'
+name = 'ECAP' # Define the name of the dataset. Options: ECAP,Burdeos,ECAP_rot,ECAPrem
+rotation = 1 # Aleatory rotation of LAA
+log_transform = 1 # Log transform ECAP data
+
+path_in = join(base_path,inp_folder) # Base directory    
 path_torch = join(base_path,'TorchData/') # Output directory for temporal torch dataset
 
 #%% Function definitions   
@@ -100,8 +103,11 @@ for g in geo:
     coord = pos
     
     # Target feature of each node (ECAP)
-    ECAP = torch.tensor(mesh.point_arrays['ECAP_Both']).unsqueeze(1).float()   
-    
+    try:
+        ECAP = torch.tensor(mesh.point_arrays['ECAP_Both']).unsqueeze(1).float()   
+    except:
+        ECAP = torch.tensor(mesh.point_arrays['ECAP']).unsqueeze(1).float()
+        
     # Obtain the faces from the .vtk files
     face = torch.tensor(np.moveaxis(mesh.faces.reshape(-1,4)[:,1:],0,1))
     
@@ -125,6 +131,9 @@ data_final = ECAPdataset(path_in)
 scaler = PowerTransformer()
 data_final.data.curve = torch.tensor(scaler.fit_transform(data_final.data.curve)).float()
 
+if log_transform == 1:
+    data_final.data.y = torch.tensor(np.log(data_final.data.y)+1).float()
+
 # Save the dataset
 torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '') +'.dataset'))
 
@@ -134,7 +143,7 @@ plotter = pv.Plotter()
 
 for i in range(10):
     
-    m = pv.PolyData(data_final[i].pos.numpy(),mesh.faces)
+    m = pv.PolyData(data_final[i].pos.numpy())
     m.point_arrays['ECAP'] = data_final[i].y.numpy()
     
     plotter.add_mesh(m, scalars='ECAP', label=str(i))

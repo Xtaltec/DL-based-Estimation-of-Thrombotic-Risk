@@ -117,8 +117,12 @@ def evaluate(loader,len_data):
         for data in loader:
 
             data = data.to(device) # Data to GPU
-            pred = model(data) # Predict
-            label = data.y.to(device) # Label to GPU
+            # pred = model(data) # Predict
+            # label = data.y.to(device) # Label to GPU
+            
+            pred = torch.exp(model(data)-1) # Predict
+            label = torch.exp(data.y.to(device)-1) # Label to GPU
+            
             loss = crit(pred, label) # Compute loss
             conf += thresholding(pred, label)/data.y.shape[0] # Compute correct higher percentiles
 
@@ -142,8 +146,11 @@ def predict(loader):
             data = data.to(device) # Batch to GPU
             pred = model(data) # Predict
              
-            label = data.y.detach().cpu().numpy() # Ground truth
-            pred = pred.detach().cpu().numpy() # Prediction
+            # label = data.y.detach().cpu().numpy() # Ground truth
+            # pred = pred.detach().cpu().numpy() # Prediction
+            
+            label = np.exp(data.y.detach().cpu().numpy()-1) # Ground truth
+            pred = np.exp(pred.detach().cpu().numpy()-1) # Prediction
         
             labels.append(label) # Save batch Ground truth
             predictions.append(pred) # Save batch Prediction
@@ -359,10 +366,12 @@ for hyper in product(*param_values):
         print('\nEpoch: {:03d}'. format(epoch))
         
         wandb.log({"Train loss": loss, "Validation loss": loss_val, "Test loss": loss_test})
-    
-        test_metric = loss_val 
-       
-        results[epoch,0],results[epoch,1],results[epoch,2]= loss, test_metric,loss_test
+        
+        if i != 1 and loss_test < min(results[epoch,2]):
+            
+            labels,predictions,indices = predict(test_loader)
+        
+        results[epoch,0],results[epoch,1],results[epoch,2]= loss,loss_val,loss_test
         thres[epoch,:,:]=conf_test
             
     #%% Print best results in iteration and save
