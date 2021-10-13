@@ -9,7 +9,7 @@ geometric dataset in graph format
 from glob import glob
 from ntpath import basename
 from pathlib import Path
-import os, re, shutil, getpass, numpy as np, pyvista as pv
+import os, re, shutil, getpass,seaborn as sns, pandas as pd, numpy as np, pyvista as pv
 from os.path import join
 
 import torch
@@ -134,7 +134,7 @@ scaler = PowerTransformer()
 data_final.data.curve = torch.tensor(scaler.fit_transform(data_final.data.curve)).float()
 
 if log_transform == 1:
-    data_final.data.y = torch.tensor(np.log(data_final.data.y)+1).float()
+    data_final.data.y = torch.log(data_final.data.y).float()
 
 # Save the dataset
 torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '') +'.dataset'))
@@ -152,3 +152,12 @@ for i in range(10):
     
 plotter.add_legend() 
 plotter.show() 
+
+#%% Plot final ECAP distribution
+
+sns.set_theme()
+
+ECAP = data_final.data.y.numpy()
+df = pd.DataFrame(ECAP, columns=["ECAP"])
+g = sns.displot(df, x="ECAP", kind="kde")
+g.set(xlim=(-5, 15))

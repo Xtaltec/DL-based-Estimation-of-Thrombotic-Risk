@@ -65,6 +65,8 @@ def parseArguments():
                         help="Activation function. 'elu' or 'relu'")
     parser.add_argument("--threshold", "-th",  nargs='+', type=float, default=[1,2,3,4,5,6,20,30,50],
                         help="Thresholds for binary classification")
+    parser.add_argument("--log_trans", "-lt", type=bool, default=False,
+                        help="Is the data log_transformed?")
     
     args = parser.parse_args()
 
@@ -118,11 +120,8 @@ def evaluate(loader,len_data):
         for data in loader:
 
             data = data.to(device) # Data to GPU
-            # pred = model(data) # Predict
-            # label = data.y.to(device) # Label to GPU
-            
-            pred = torch.exp(model(data)-1) # Predict
-            label = torch.exp(data.y.to(device)-1) # Label to GPU
+            pred = model(data) if config["Log Transform"]==0 else torch.exp(model(data)) # Predict
+            label = data.y.to(device) if config["Log Transform"]==0 else torch.exp(data.y.to(device)) # Label to GPU
             
             loss = crit(pred, label) # Compute loss
             conf += thresholding(pred, label)/data.y.shape[0] # Compute correct higher percentiles
@@ -146,12 +145,9 @@ def predict(loader):
 
             data = data.to(device) # Batch to GPU
             pred = model(data) # Predict
-             
-            # label = data.y.detach().cpu().numpy() # Ground truth
-            # pred = pred.detach().cpu().numpy() # Prediction
             
-            label = np.exp(data.y.detach().cpu().numpy()-1) # Ground truth
-            pred = np.exp(pred.detach().cpu().numpy()-1) # Prediction
+            label = data.y.detach().cpu().numpy() if config["Log Transform"]==0 else np.exp(data.y.detach().cpu().numpy()) # Ground truth
+            pred = pred.detach().cpu().numpy() if config["Log Transform"]==0 else np.exp(pred.detach().cpu().numpy()) # Prediction
         
             labels.append(label) # Save batch Ground truth
             predictions.append(pred) # Save batch Prediction
@@ -222,11 +218,11 @@ parameters = dict(
     ,seed=list(args.seed) # Random seed
     ,loss_func = list(args.loss_func) # Options 'L1','SmoothL1','MSE'
     ,cross = [args.cross] # If True perform cross-validation
-    
+    ,log_trans = [args.log_trans]
 )
 
 hyp_name  = ["Dataset","Folds","Epochs", "Learning rate", "Batch size", "Drop rate","Layer depth", "Hidden features","Activation"
-         ,"Spline or Sage", "Kernel size", "Weight decay","Split", "Seed", 'Loss','Cross-validation']
+         ,"Spline or Sage", "Kernel size", "Weight decay","Split", "Seed", 'Loss','Cross-validation',"Log Transform"]
 
 #%% Dataframe to store all the data according to the employed keys
 
