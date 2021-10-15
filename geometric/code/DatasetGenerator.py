@@ -9,7 +9,7 @@ geometric dataset in graph format
 from glob import glob
 from ntpath import basename
 from pathlib import Path
-import os, re, shutil, getpass,seaborn as sns, pandas as pd, numpy as np, pyvista as pv
+import os, re, shutil, argparse, getpass, pandas as pd, numpy as np, pyvista as pv
 from os.path import join
 
 import torch
@@ -18,6 +18,33 @@ from torch_geometric.data import InMemoryDataset
 from torch_geometric import transforms as T
 from sklearn.preprocessing import PowerTransformer
 
+#%% Parse arguments
+
+def parseArguments():    
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--folder", "-f",  type=str, default='LAA_Smoothed',
+                        help="Choose the name of input folder.")
+    parser.add_argument("--name", "-n",  type=str, default='ECAP',
+                        help="Name of the output dataset")
+    parser.add_argument("--rotation", "-r",  type=bool, default=False,
+                        help="Random rotation of input geometries")
+    parser.add_argument("--log_transform", "-lt",  type=bool, default=False,
+                        help="Log transform ECAP distribution?")
+    
+    args = parser.parse_args()
+
+    return args
+
+args = parseArguments()
+
+if not os.name == 'posix':
+    
+    args.folder = 'LAA_Smoothed'
+    args.name = 'ECAP' # Define the name of the dataset. Options: ECAP,Burdeos,ECAP_rot,ECAPrem
+    args.rotation = 0 # Aleatory rotation of LAA
+    args.log_transform = 1 # Log transform ECAP data
+    
 #%%  Initialization
 
 if os.name == 'nt' and getpass.getuser()=='Xabier':
@@ -27,12 +54,7 @@ elif os.name == 'nt' and getpass.getuser()=='u164110':
 elif os.name == 'posix':
     base_path = '/media/u164110/Data/PhD/Frontiers/geo/data/' # The general path to the LAA .vtk
 
-inp_folder = 'LAA_Smoothed'
-name = 'ECAP' # Define the name of the dataset. Options: ECAP,Burdeos,ECAP_rot,ECAPrem
-rotation = 0 # Aleatory rotation of LAA
-log_transform = 1 # Log transform ECAP data
-
-path_in = join(base_path,inp_folder) # Base directory    
+path_in = join(base_path,args.folder) # Base directory    
 path_torch = join(base_path,'TorchData/') # Output directory for temporal torch dataset
 
 #%% Function definitions   
@@ -47,7 +69,7 @@ def torch_transform(graph):
     # Add a constant value to each node feature through Constant
     
     rot = T.RandomRotate(360)
-    graph = rot(graph) if rotation == 1 else graph
+    graph = rot(graph) if args.rotation == True else graph
     
     pre_transform = T.Compose([T.Constant(value=1),T.GenerateMeshNormals(),T.FaceToEdge(), T.Cartesian()])
     transformed = pre_transform(graph) # Apply transform
@@ -102,7 +124,7 @@ for g in geo:
     
     coord = pos
     
-    connectivity = mesh.faces
+    connectivity = torch.Tensor(mesh.faces).int()
     
     # Target feature of each node (ECAP)
     try:
@@ -133,31 +155,35 @@ data_final = ECAPdataset(path_in)
 scaler = PowerTransformer()
 data_final.data.curve = torch.tensor(scaler.fit_transform(data_final.data.curve)).float()
 
-if log_transform == 1:
+if args.log_transform == True:
     data_final.data.y = torch.log(data_final.data.y).float()
 
 # Save the dataset
-torch.save(data_final,join(base_path,name+('_Rotated' if rotation == 1 else '') +'.dataset'))
+torch.save(data_final,join(base_path,args.name+('_Rotated' if args.rotation == True else '')+('_Log' if args.log_transform == True else '') +'.dataset'))
 
 #%% Test rotation of geometries
 
+pv.set_plot_theme("document")
 plotter = pv.Plotter() 
 
 for i in range(10):
     
-    m = pv.PolyData(data_final[i].pos.numpy())
+    m = pv.PolyData(data_final[i].pos.numpy(),data_final[i].connectivity.numpy())
     m.point_arrays['ECAP'] = data_final[i].y.numpy()
     
-    plotter.add_mesh(m, scalars='ECAP', label=str(i))
+    plotter.add_mesh(m, scalars='ECAP', clim=[0,6], label=str(i))
     
 plotter.add_legend() 
 plotter.show() 
 
 #%% Plot final ECAP distribution
-
-sns.set_theme()
-
-ECAP = data_final.data.y.numpy()
-df = pd.DataFrame(ECAP, columns=["ECAP"])
-g = sns.displot(df, x="ECAP", kind="kde")
-g.set(xlim=(-5, 15))
+if not os.name == 'posix':
+    
+    import seaborn as sns
+    
+    sns.set_theme()
+    
+    ECAP = data_final.data.y.numpy()
+    df = pd.DataFrame(ECAP, columns=["ECAP"])
+    g = sns.displot(df, x="ECAP", kind="kde")
+    g.set(xlim=(-5, 15))

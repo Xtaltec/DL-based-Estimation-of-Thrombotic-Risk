@@ -65,8 +65,6 @@ def parseArguments():
                         help="Activation function. 'elu' or 'relu'")
     parser.add_argument("--threshold", "-th",  nargs='+', type=float, default=[1,2,3,4,5,6,20,30,50],
                         help="Thresholds for binary classification")
-    parser.add_argument("--log_trans", "-lt", type=bool, default=False,
-                        help="Is the data log_transformed?")
     
     args = parser.parse_args()
 
@@ -120,8 +118,8 @@ def evaluate(loader,len_data):
         for data in loader:
 
             data = data.to(device) # Data to GPU
-            pred = model(data) if config["Log Transform"]==0 else torch.exp(model(data)) # Predict
-            label = data.y.to(device) if config["Log Transform"]==0 else torch.exp(data.y.to(device)) # Label to GPU
+            pred = model(data) if 'Log' not in config["Dataset"] else torch.exp(model(data)) # Predict
+            label = data.y.to(device) if 'Log' not in config["Dataset"] else torch.exp(data.y.to(device)) # Label to GPU
             
             loss = crit(pred, label) # Compute loss
             conf += thresholding(pred, label)/data.y.shape[0] # Compute correct higher percentiles
@@ -146,8 +144,8 @@ def predict(loader):
             data = data.to(device) # Batch to GPU
             pred = model(data) # Predict
             
-            label = data.y.detach().cpu().numpy() if config["Log Transform"]==0 else np.exp(data.y.detach().cpu().numpy()) # Ground truth
-            pred = pred.detach().cpu().numpy() if config["Log Transform"]==0 else np.exp(pred.detach().cpu().numpy()) # Prediction
+            label = data.y.detach().cpu().numpy() if 'Log' not in config["Dataset"] else np.exp(data.y.detach().cpu().numpy()) # Ground truth
+            pred = pred.detach().cpu().numpy() if 'Log' not in config["Dataset"] else np.exp(pred.detach().cpu().numpy()) # Prediction
         
             labels.append(label) # Save batch Ground truth
             predictions.append(pred) # Save batch Prediction
@@ -180,6 +178,7 @@ def confusion(prediction, truth):
     """
 
     confusion_vector = prediction / truth
+    
     # Element-wise division of the 2 tensors returns a new tensor which holds a
     # unique value for each case:
     #   1     where prediction and truth are 1 (True Positive)
@@ -218,11 +217,11 @@ parameters = dict(
     ,seed=list(args.seed) # Random seed
     ,loss_func = list(args.loss_func) # Options 'L1','SmoothL1','MSE'
     ,cross = [args.cross] # If True perform cross-validation
-    ,log_trans = [args.log_trans]
+    
 )
 
 hyp_name  = ["Dataset","Folds","Epochs", "Learning rate", "Batch size", "Drop rate","Layer depth", "Hidden features","Activation"
-         ,"Spline or Sage", "Kernel size", "Weight decay","Split", "Seed", 'Loss','Cross-validation',"Log Transform"]
+         ,"Spline or Sage", "Kernel size", "Weight decay","Split", "Seed", 'Loss','Cross-validation']
 
 #%% Dataframe to store all the data according to the employed keys
 
@@ -385,7 +384,7 @@ for hyper in product(*param_values):
     
                 p_GT.add_text("Ground truth",font_size=15)
                 p_GT.add_mesh(mesh_GT, scalars='ECAP',clim=[0,6], 
-                                 scalar_bar_args=dict(position_x = 0.8,label_font_size=10,title_font_size=15))
+                                  scalar_bar_args=dict(position_x = 0.8,label_font_size=10,title_font_size=15))
                
                 p_PR.add_text("Prediction",font_size=15)
                 p_PR.add_mesh(mesh_PR, scalars='ECAP',clim=[0,6],show_scalar_bar=False)
@@ -397,7 +396,6 @@ for hyper in product(*param_values):
             image_grid = make_grid(torch.tensor(image), nrow=n_images)
             images = wandb.Image(image_grid,caption = "Epoch "+str(epoch))
             wandb.log({"Prediction": images})
-
         
         results[epoch,0],results[epoch,1],results[epoch,2]= loss,loss_val,loss_test
         thres[epoch,:,:]=conf_test
