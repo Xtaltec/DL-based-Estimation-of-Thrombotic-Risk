@@ -379,8 +379,8 @@ for hyper in product(*param_values):
                 mesh_PR.point_arrays['ECAP'] = predictions[i]
                 
                 pv.set_plot_theme("document") # White background
-                p_GT = pv.Plotter(shape=(1,1), border=False, title = str(indices[k]),window_size=[200,300])
-                p_PR = pv.Plotter(shape=(1,1), border=False,window_size=[200,300])
+                p_GT = pv.Plotter(shape=(1,1), border=False, title = str(indices[k]),window_size=[200,300],off_screen=True)
+                p_PR = pv.Plotter(shape=(1,1), border=False,window_size=[200,300],off_screen=True)
     
                 p_GT.add_text("Ground truth",font_size=15)
                 p_GT.add_mesh(mesh_GT, scalars='ECAP',clim=[0,6], 
@@ -389,8 +389,8 @@ for hyper in product(*param_values):
                 p_PR.add_text("Prediction",font_size=15)
                 p_PR.add_mesh(mesh_PR, scalars='ECAP',clim=[0,6],show_scalar_bar=False)
                 
-                image_GT += [p_GT.show(return_img=True)[1]]
-                image_PR += [p_PR.show(return_img=True)[1]]
+                image_GT += [p_GT.screenshot(None, return_img=True)]
+                image_PR += [p_PR.screenshot(None, return_img=True)]
                 
             image = np.moveaxis(np.concatenate([np.stack(image_GT,axis=0),np.stack(image_PR,axis=0)]),3,1).astype('int')/255
             image_grid = make_grid(torch.tensor(image), nrow=n_images)
