@@ -6,7 +6,7 @@ Input hyperparameters can be set up through argparse.
 @author: Xabier Morales Ferez - xabier.morales@upf.edu
 """
 
-import os, random, torch , argparse, numpy as np, pandas as pd, pyvista as pv
+import os, random, torch , argparse, numpy as np, pandas as pd, pyvista as pv, matplotlib.image as mpimg
 from pathlib import Path
 from os.path import normpath,join
 from itertools import product
@@ -15,6 +15,7 @@ from torch.nn import DataParallel
 from torch_geometric.data import DataLoader
 import torch_geometric.transforms as T
 from torchvision.utils import make_grid
+import subprocess
 
 #%% Parse arguments
 
@@ -193,320 +194,361 @@ def confusion(prediction, truth):
 
     return [true_positives, false_positives, true_negatives, false_negatives]
 
-#%% Set hyperparameters:
-
-results_by = args.results_by # Results can be grouped by keys 
-
-thresholds = args.threshold
-
-parameters = dict(
-     
-    dat = list(args.data)
-    ,folds = [args.folds] # Cross-validation folds
-    ,num_epoch = list(args.num_epoch) # Number of epochs for each fold
-    ,learn_rate = list(args.learn_rate) # Learning rate
-    ,batch_size = list(args.batch_size) # Batch size
-    ,drop_rate = list(args.drop_rate) # Drop rate
-    ,depth =list(args.depth) # Depth of hidden layers in local feature extractor
-    ,hidden =list(args.hidden) # Number of channels in hidden layers
-    ,activation = list(args.activation) # Activation function
-    ,spline = list(args.spline) # SplineConv or SAGEConv
-    ,kernel_size = list(args.kernel_size) # Kernel size
-    ,weight_decay =list(args.weight_decay) # Weight decay
-    ,split =list(args.split) # Training-testing split
-    ,seed=list(args.seed) # Random seed
-    ,loss_func = list(args.loss_func) # Options 'L1','SmoothL1','MSE'
-    ,cross = [args.cross] # If True perform cross-validation
-    
-)
-
-hyp_name  = ["Dataset","Folds","Epochs", "Learning rate", "Batch size", "Drop rate","Layer depth", "Hidden features","Activation"
-         ,"Spline or Sage", "Kernel size", "Weight decay","Split", "Seed", 'Loss','Cross-validation']
-
-#%% Dataframe to store all the data according to the employed keys
-
-if parameters['cross'][0] == True:
-    
-    if sum([len(i) for i in [v for v in parameters.values()]])> len(parameters):
-        raise ValueError('In cross-validation use a single value per hyperparameter')
+if __name__ == "__main__":
         
-    parameters['num_epoch'] = parameters['num_epoch']*parameters['folds'][0] # Repeat training as many times as folds
-
-df = pd.DataFrame(columns = list(['Val_Mae','Test_Mae'])+list(parameters.keys()))
-df['Val_Mae'],df['Test_Mae']= df['Val_Mae'].astype(float),df['Test_Mae'].astype(float)
-conf_all = np.zeros([len(thresholds),4])
-
-# Set experiment name
-param_values = [v for v in parameters.values()]
-
-#%% Grid search loop
-   
-i = 0
-
-for hyper in product(*param_values): 
-     
-    i+=1    
-
-    #%% Create log in hyperdash for monitoring
-    config = dict(zip(hyp_name,hyper))
-    run = wandb.init(project=args.project, group=args.group, name=config['Dataset'], job_type='Run',config=config)
-
-    wandb.define_metric("Train loss", summary="min")
-    wandb.define_metric("Validation loss", summary="min")
-    wandb.define_metric("Test loss", summary="min")
+    #%% Set hyperparameters:
     
-    print('\n')
+    results_by = args.results_by # Results can be grouped by keys 
     
-    #%% Save results depending on experiment
-  
-    result_path = normpath(join(args.path,'results/','_'.join([args.project,args.group,args.name])))
-    Path(result_path).mkdir(parents=True, exist_ok=True)
-
-    #%% Load dataset and divide the data in training and testing
+    thresholds = args.threshold
+    
+    parameters = dict(
+         
+        dat = list(args.data)
+        ,folds = [args.folds] # Cross-validation folds
+        ,num_epoch = list(args.num_epoch) # Number of epochs for each fold
+        ,learn_rate = list(args.learn_rate) # Learning rate
+        ,batch_size = list(args.batch_size) # Batch size
+        ,drop_rate = list(args.drop_rate) # Drop rate
+        ,depth =list(args.depth) # Depth of hidden layers in local feature extractor
+        ,hidden =list(args.hidden) # Number of channels in hidden layers
+        ,activation = list(args.activation) # Activation function
+        ,spline = list(args.spline) # SplineConv or SAGEConv
+        ,kernel_size = list(args.kernel_size) # Kernel size
+        ,weight_decay =list(args.weight_decay) # Weight decay
+        ,split =list(args.split) # Training-testing split
+        ,seed=list(args.seed) # Random seed
+        ,loss_func = list(args.loss_func) # Options 'L1','SmoothL1','MSE'
+        ,cross = [args.cross] # If True perform cross-validation
+        
+    )
+    
+    hyp_name  = ["Dataset","Folds","Epochs", "Learning rate", "Batch size", "Drop rate","Layer depth", "Hidden features","Activation"
+             ,"Spline or Sage", "Kernel size", "Weight decay","Split", "Seed", 'Loss','Cross-validation']
+    
+    #%% Dataframe to store all the data according to the employed keys
+    
+    if parameters['cross'][0] == True:
+        
+        if sum([len(i) for i in [v for v in parameters.values()]])> len(parameters):
+            raise ValueError('In cross-validation use a single value per hyperparameter')
+            
+        parameters['num_epoch'] = parameters['num_epoch']*parameters['folds'][0] # Repeat training as many times as folds
+    
+    df = pd.DataFrame(columns = list(['Val_Mae','Test_Mae'])+list(parameters.keys()))
+    df['Val_Mae'],df['Test_Mae']= df['Val_Mae'].astype(float),df['Test_Mae'].astype(float)
+    conf_all = np.zeros([len(thresholds),4])
+    
+    # Set experiment name
+    param_values = [v for v in parameters.values()]
+    
+    #%% Grid search loop
+       
+    i = 0
+    
+    for hyper in product(*param_values): 
+         
+        i+=1    
+    
+        #%% Create log in hyperdash for monitoring
+        config = dict(zip(hyp_name,hyper))
+        run = wandb.init(project=args.project, group=args.group, name=config['Dataset'], job_type='Run',config=config)
+    
+        wandb.define_metric("Train loss", summary="min")
+        wandb.define_metric("Validation loss", summary="min")
+        wandb.define_metric("Test loss", summary="min")
+        
+        print('\n')
+        
+        #%% Save results depending on experiment
+      
+        result_path = normpath(join(args.path,'results/','_'.join([args.project,args.group,args.name])))
+        Path(result_path).mkdir(parents=True, exist_ok=True)
+    
+        #%% Load dataset and divide the data in training and testing
+        
+        if config['Cross-validation'] == False:
+            
+            dataset = torch.load(join(data_path,config['Dataset']+'.dataset'))
+        
+            # Normalize vertex-wise coordinates
+            norm = T.NormalizeScale()
+            norm(dataset.data)
+            
+            num_cases = dataset.len() # Number of cases
+            indices = list(np.arange(num_cases)) # Indices of all cases
+            
+            torch.manual_seed(config['Seed']) if config['Seed'] != None else False # Set random seed if not None
+            
+            train_all = random.sample(indices,int(round(num_cases*config['Split'])))
+            val_ind = random.sample(train_all,int(np.ceil(len(train_all)*0.1)))
+            train_ind = list(np.setdiff1d(train_all,val_ind))
+            test_ind = list(np.setdiff1d(indices,train_all))
+            
+        elif i == 1 and config['Cross-validation'] == True:
+            
+            dataset = torch.load(join(data_path,config['Dataset']+'.dataset'))
+            
+            # Normalize vertex-wise coordinates
+            norm = T.NormalizeScale()
+            norm(dataset.data)
+            
+            num_cases = dataset.len() # Number of cases
+            indices = list(np.arange(num_cases)) # Indices of all cases
+            
+            # Shuffle the dataset
+            dataset = dataset.shuffle()
+    
+            # Divide the dataset in folds
+            folds = np.array_split(indices, config['Folds'])
+                
+        #%% Choose each fold for each iteration and loader instantiation
+        
+        if config['Cross-validation'] == True:    
+            test_ind = folds[i-1] # Select testing cases for the iteration
+            train_ind = list(np.setdiff1d(indices, test_ind)) # Remaining cases for training
+            val_ind = random.sample(list(train_ind),round(len(train_ind)*0.1)) # Validation case %10 of training data
+            train_ind = list(np.setdiff1d(train_ind, val_ind)) # Remove validation data from training
+            
+        train_dataset,val_dataset,test_dataset = dataset[list(train_ind)],dataset[list(val_ind)],dataset[list(test_ind)]
+    
+        print(train_dataset);print(val_dataset);print(test_dataset)
+        
+        # Pass the data to the loader
+        train_loader,val_loader,test_loader = DataLoader(train_dataset, batch_size=config['Batch size']),DataLoader(val_dataset, batch_size=config['Batch size']),DataLoader(test_dataset, batch_size=1) 
+       
+        #%% Check GPU device availability
+        
+        use_cuda = torch.cuda.is_available()
+        device = torch.device("cuda:0" if use_cuda else "cpu")
+        print('Let\'s use', torch.cuda.device_count(), 'GPUs!')
+         
+        #%% Create model instance
+        
+        model = GeometricPointNet(config['Spline or Sage'],config['Layer depth'],config['Hidden features'],config['Drop rate'],config['Kernel size'],config['Activation'])
+        
+        # If more than one GPU available paralelize
+        if torch.cuda.device_count() > 1: 
+            model = DataParallel(model) 
+    
+        model.to(device)
+        
+        #num_epoch = int(iterations/train_len + 0.5)
+        print(model) # print full net
+        model_parameters = filter(lambda p: p.requires_grad,model.parameters())
+        params = sum([np.prod(p.size()) for p in model_parameters])
+        print("Initialized model with {} trainable params ".format(params))
+        
+        #%% Model loss function and optimizer
+        
+        if config['Loss'] == 'MSE':
+            crit = torch.nn.MSELoss()
+        elif config['Loss'] == 'SmoothL1':
+            crit = torch.nn.SmoothL1Loss()
+        else:
+            crit = torch.nn.L1Loss()
+            
+        optimizer = torch.optim.Adam(model.parameters(),lr=config['Learning rate'], weight_decay=config['Weight decay'])
+        
+        #%% Training loop    
+        
+        results = 1000*np.ones([config['Epochs'],3])
+        thres = np.zeros([config['Epochs'],len(thresholds),4])
+        
+        for epoch in range(config['Epochs']):
+            
+            loss = train(train_loader)
+            
+            loss_val,conf_val= evaluate(val_loader,len(val_dataset)) 
+            loss_test,conf_test= evaluate(test_loader,len(test_dataset))
+                            
+            print('\nEpoch: {:03d}'. format(epoch))
+            
+            wandb.log({"Train loss": loss, "Validation loss": loss_val, "Test loss": loss_test})
+            
+            # Plot prediction images in wandb
+            if loss_test < np.min(results[:,2]):
+                
+                n_images = 5
+                
+                labels,predictions,indices = predict(test_loader)
+                
+                #%% 1st approach
+                
+                # cases = np.array(dataset.data.case)
+                
+                # np.savez(join(result_path,'Result.npz'),labels=labels,predictions=predictions,indices=indices)
+                # torch.save(dataset,join(result_path,'Result.dataset'))
+                
+                # subprocess.call(['python', 'mesh_plotter.py','-p',result_path,'-e',str(epoch),'-ni',str(n_images)])
+                
+                # images = wandb.Image(mpimg.imread(join(result_path,'Result_'+str(epoch).zfill(3)+'.png')),caption = "Epoch "+str(epoch))
+                # wandb.log({"Prediction": images})
+                
+                #%% 2nd approach
+                
+                
+                image_GT,image_PR = [],[]
+                for k in range(n_images):
+                    
+                    or_case = int(np.where(np.array(dataset.data.case)==indices[k])[0][0])
+                    coord, connectivity = dataset[or_case].coord.numpy(),dataset[or_case].connectivity
+               
+                    np.savez(join(result_path,'Temp.npz'),labels=labels[k],predictions=predictions[k],indices=indices[k],coord=coord,connectivity=connectivity)
+                
+                    subprocess.call(['python', 'mesh_plotter_2.py','-p',result_path])
+                    
+                    image_GT += [mpimg.imread(join(result_path,'Temp_GT.png'))]
+                    image_PR += [mpimg.imread(join(result_path,'Temp_GT.png'))]
+                    
+                image = np.moveaxis(np.concatenate([np.stack(image_GT,axis=0),np.stack(image_PR,axis=0)]),3,1).astype('int')/255
+                image_grid = make_grid(torch.tensor(image), nrow=n_images)
+                images = wandb.Image(image_grid,caption = "Epoch "+str(epoch))
+                wandb.log({"Prediction": images})
+            
+                #%%
+                
+                # image_GT,image_PR = [],[]
+                # for k in range(n_images):
+                    
+                #     or_case = int(np.where(np.array(dataset.data.case)==indices[k])[0][0])
+                #     mesh_GT = pv.PolyData(dataset[or_case].coord.numpy(),dataset[or_case].connectivity)
+                #     mesh_PR = pv.PolyData(dataset[or_case].coord.numpy(),dataset[or_case].connectivity)
+                    
+                #     mesh_GT.point_data['ECAP'] = labels[i]
+                #     mesh_PR.point_data['ECAP'] = predictions[i]
+                    
+                #     # PyVista headless display
+                #     pv.start_xvfb()
+                #     pv.set_plot_theme("document") # White background
+                #     p_GT = pv.Plotter(shape=(1,1), border=False, title = str(indices[k]),window_size=[200,300],off_screen=True)
+                #     p_PR = pv.Plotter(shape=(1,1), border=False,window_size=[200,300],off_screen=True)
+        
+                #     p_GT.add_text("Ground truth",font_size=15)
+                #     p_GT.add_mesh(mesh_GT, scalars='ECAP',clim=[0,6], 
+                #                       scalar_bar_args=dict(position_x = 0.8,label_font_size=10,title_font_size=15))
+                   
+                #     p_PR.add_text("Prediction",font_size=15)
+                #     p_PR.add_mesh(mesh_PR, scalars='ECAP',clim=[0,6],show_scalar_bar=False)
+                    
+                #     image_GT += [p_GT.screenshot(None, return_img=True)]
+                #     image_PR += [p_PR.screenshot(None, return_img=True)]
+    
+                # image = np.moveaxis(np.concatenate([np.stack(image_GT,axis=0),np.stack(image_PR,axis=0)]),3,1).astype('int')/255
+                # image_grid = make_grid(torch.tensor(image), nrow=n_images)
+                # images = wandb.Image(image_grid,caption = "Epoch "+str(epoch))
+                # wandb.log({"Prediction": images})
+            
+            results[epoch,0],results[epoch,1],results[epoch,2]= loss,loss_val,loss_test
+            thres[epoch,:,:]=conf_test
+                
+        #%% Print best results in iteration and save
+        
+        min_val = np.min(results[:,1])
+        mae_test = float(results[np.where(np.isclose(results[:,1],min_val)),2].squeeze())
+        conf_final = thres[np.where(np.isclose(results[:,1],min_val))[0][0],:,:]
+        
+        df.loc[i] = list([min_val,mae_test])+list(hyper) 
+            
+        print('\nFinal - Loss: {:.5f}, Accuracy: {:.5f}\n'.
+              format(np.min(results[:,0]),np.min(results[:,2])))
+        
+        print('\nFinal Confusion matrix Th=4 - TP: {:.2f}, FP: {:.2f}, TN: {:.2f}, FN: {:.2f}\n'.
+              format(conf_final[3,0],conf_final[3,1],conf_final[3,2],conf_final[3,3]))
+        
+        conf_all += conf_final
+        
+        #%% Cleanup and mark successfull completion
+        
+        run.finish()
+        
+    #%% Print experiment summary
+    
+    run = wandb.init(project=args.project, group=args.group, name=args.name+'_Summary', job_type= 'Summary',config=config) # Log hyperparameters WandB
+    
+    df.to_pickle(os.path.join(result_path,'..','dataframe_'+'_'.join([args.project,args.group,args.name])+'.npy'))
+    conf_all = conf_all/i
+        
+    keys = list(parameters.keys())
+    
+    print('\n\nGeneral results:')          
+    
+    #%% Plot cross-validation result
+    
+    if config['Cross-validation'] == True:
+        
+        mean = df.Val_Mae.mean()
+        std = df.Val_Mae.std()
+        
+        print('\nValidation MAE accuracy: {:.5f} + {:.5f}\n'.format(mean,std)) 
+        
+        for j in range(len(df)):
+            print(str(j)+': {:.5f}'.format(df.iloc[j][0]))
+            
+        mean = df.Test_Mae.mean()
+        std = df.Test_Mae.std()
+            
+        print('\nTesting MAE accuracy: {:.5f} + {:.5f}\n'.format(mean,std)) 
+        
+        for j in range(len(df)):
+            print(str(j)+': {:.5f}'.format(df.iloc[j][1]))
+        
+    #%% Plot results grouped by hyperparameters
+       
+    for i in keys:
+        if len(df[i].unique())>1:
+            
+            print('\n Val MAE value for '+i)            
+            mean = df.groupby(df[i])['Val_Mae'].mean()
+            std = df.groupby(df[i])['Val_Mae'].std()
+            
+            for j,k,m in zip(mean.index,mean.values,std.values):
+                print(str(j)+': {:.5f} + {:.5f}'.format(k,m))
+                
+            print('\n Test MAE value for '+i)            
+            mean = df.groupby(df[i])['Test_Mae'].mean()
+            std = df.groupby(df[i])['Test_Mae'].std()
+            
+            for j,k,m in zip(mean.index,mean.values,std.values):
+                print(str(j)+': {:.5f} + {:.5f}'.format(k,m))
     
     if config['Cross-validation'] == False:
+        group_by = [keys.index(i) for i in results_by] 
         
-        dataset = torch.load(join(data_path,config['Dataset']+'.dataset'))
-    
-        # Normalize vertex-wise coordinates
-        norm = T.NormalizeScale()
-        norm(dataset.data)
-        
-        num_cases = dataset.len() # Number of cases
-        indices = list(np.arange(num_cases)) # Indices of all cases
-        
-        torch.manual_seed(config['Seed']) if config['Seed'] != None else False # Set random seed if not None
-        
-        train_all = random.sample(indices,int(round(num_cases*config['Split'])))
-        val_ind = random.sample(train_all,int(np.ceil(len(train_all)*0.1)))
-        train_ind = list(np.setdiff1d(train_all,val_ind))
-        test_ind = list(np.setdiff1d(indices,train_all))
-        
-    elif i == 1 and config['Cross-validation'] == True:
-        
-        dataset = torch.load(join(data_path,config['Dataset']+'.dataset'))
-        
-        # Normalize vertex-wise coordinates
-        norm = T.NormalizeScale()
-        norm(dataset.data)
-        
-        num_cases = dataset.len() # Number of cases
-        indices = list(np.arange(num_cases)) # Indices of all cases
-        
-        # Shuffle the dataset
-        dataset = dataset.shuffle()
-
-        # Divide the dataset in folds
-        folds = np.array_split(indices, config['Folds'])
+        for g in group_by:
             
-    #%% Choose each fold for each iteration and loader instantiation
-    
-    if config['Cross-validation'] == True:    
-        test_ind = folds[i-1] # Select testing cases for the iteration
-        train_ind = list(np.setdiff1d(indices, test_ind)) # Remaining cases for training
-        val_ind = random.sample(list(train_ind),round(len(train_ind)*0.1)) # Validation case %10 of training data
-        train_ind = list(np.setdiff1d(train_ind, val_ind)) # Remove validation data from training
-        
-    train_dataset,val_dataset,test_dataset = dataset[list(train_ind)],dataset[list(val_ind)],dataset[list(test_ind)]
-
-    print(train_dataset);print(val_dataset);print(test_dataset)
-    
-    # Pass the data to the loader
-    train_loader,val_loader,test_loader = DataLoader(train_dataset, batch_size=config['Batch size']),DataLoader(val_dataset, batch_size=config['Batch size']),DataLoader(test_dataset, batch_size=1) 
-   
-    #%% Check GPU device availability
-    
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda:0" if use_cuda else "cpu")
-    print('Let\'s use', torch.cuda.device_count(), 'GPUs!')
-     
-    #%% Create model instance
-    
-    model = GeometricPointNet(config['Spline or Sage'],config['Layer depth'],config['Hidden features'],config['Drop rate'],config['Kernel size'],config['Activation'])
-    
-    # If more than one GPU available paralelize
-    if torch.cuda.device_count() > 1: 
-        model = DataParallel(model) 
-
-    model.to(device)
-    
-    #num_epoch = int(iterations/train_len + 0.5)
-    print(model) # print full net
-    model_parameters = filter(lambda p: p.requires_grad,model.parameters())
-    params = sum([np.prod(p.size()) for p in model_parameters])
-    print("Initialized model with {} trainable params ".format(params))
-    
-    #%% Model loss function and optimizer
-    
-    if config['Loss'] == 'MSE':
-        crit = torch.nn.MSELoss()
-    elif config['Loss'] == 'SmoothL1':
-        crit = torch.nn.SmoothL1Loss()
-    else:
-        crit = torch.nn.L1Loss()
-        
-    optimizer = torch.optim.Adam(model.parameters(),lr=config['Learning rate'], weight_decay=config['Weight decay'])
-    
-    #%% Training loop    
-    
-    results = 1000*np.ones([config['Epochs'],3])
-    thres = np.zeros([config['Epochs'],len(thresholds),4])
-    
-    for epoch in range(config['Epochs']):
-        
-        loss = train(train_loader)
-        
-        loss_val,conf_val= evaluate(val_loader,len(val_dataset)) 
-        loss_test,conf_test= evaluate(test_loader,len(test_dataset))
-                        
-        print('\nEpoch: {:03d}'. format(epoch))
-        
-        wandb.log({"Train loss": loss, "Validation loss": loss_val, "Test loss": loss_test})
-        
-        if loss_test < np.min(results[:,2]):
+            print('\n\nBy '+keys[g]+':')        
             
-            n_images = 5
-            labels,predictions,indices = predict(test_loader)
-            
-            image_GT,image_PR = [],[]
-            for k in range(n_images):
-                
-                or_case = int(np.where(np.array(dataset.data.case)==indices[k])[0][0])
-                mesh_GT = pv.PolyData(dataset[or_case].coord.numpy(),dataset[or_case].connectivity)
-                mesh_PR = pv.PolyData(dataset[or_case].coord.numpy(),dataset[or_case].connectivity)
-                
-                mesh_GT.point_arrays['ECAP'] = labels[i]
-                mesh_PR.point_arrays['ECAP'] = predictions[i]
-                
-                pv.set_plot_theme("document") # White background
-                p_GT = pv.Plotter(shape=(1,1), border=False, title = str(indices[k]),window_size=[200,300],off_screen=True)
-                p_PR = pv.Plotter(shape=(1,1), border=False,window_size=[200,300],off_screen=True)
+            for i in list(keys.copy()[:g]+keys.copy()[g+1:]):
+                if len(df[i].unique())>1:
+                    
+                    print('\nMean value for '+i)            
+                    mean = df.groupby([df[keys[g]],df[i]])['Test_Mae'].mean()
+                    std = df.groupby([df[keys[g]],df[i]])['Test_Mae'].std()
+                    
+                    for j,k,m in zip(mean.index,mean.values,std.values):
+                        print(str(j)+': {:.5f} + {:.5f}'.format(k,m)) 
+        print('\n')
     
-                p_GT.add_text("Ground truth",font_size=15)
-                p_GT.add_mesh(mesh_GT, scalars='ECAP',clim=[0,6], 
-                                  scalar_bar_args=dict(position_x = 0.8,label_font_size=10,title_font_size=15))
-               
-                p_PR.add_text("Prediction",font_size=15)
-                p_PR.add_mesh(mesh_PR, scalars='ECAP',clim=[0,6],show_scalar_bar=False)
-                
-                image_GT += [p_GT.screenshot(None, return_img=True)]
-                image_PR += [p_PR.screenshot(None, return_img=True)]
-                
-            image = np.moveaxis(np.concatenate([np.stack(image_GT,axis=0),np.stack(image_PR,axis=0)]),3,1).astype('int')/255
-            image_grid = make_grid(torch.tensor(image), nrow=n_images)
-            images = wandb.Image(image_grid,caption = "Epoch "+str(epoch))
-            wandb.log({"Prediction": images})
+    print('\nThresholding results:\n')
+    for n,i in enumerate(conf_all):
+        print('Th={:01d} - TP: {:.2f}, FP: {:.2f}, TN: {:.2f}, FN: {:.2f}'.
+              format(thresholds[n],i[0],i[1],i[2],i[3]))
         
-        results[epoch,0],results[epoch,1],results[epoch,2]= loss,loss_val,loss_test
-        thres[epoch,:,:]=conf_test
+    def safe(x,y):
+        if y == 0:
+            return 0
+        return x / y   
             
-    #%% Print best results in iteration and save
-    
-    min_val = np.min(results[:,1])
-    mae_test = float(results[np.where(np.isclose(results[:,1],min_val)),2].squeeze())
-    conf_final = thres[np.where(np.isclose(results[:,1],min_val))[0][0],:,:]
-    
-    df.loc[i] = list([min_val,mae_test])+list(hyper) 
         
-    print('\nFinal - Loss: {:.5f}, Accuracy: {:.5f}\n'.
-          format(np.min(results[:,0]),np.min(results[:,2])))
+    print('\nRates:\n')
+    for n,i in enumerate(conf_all):
     
-    print('\nFinal Confusion matrix Th=4 - TP: {:.2f}, FP: {:.2f}, TN: {:.2f}, FN: {:.2f}\n'.
-          format(conf_final[3,0],conf_final[3,1],conf_final[3,2],conf_final[3,3]))
-    
-    conf_all += conf_final
+        print('Th={:01d} - TPR: {:.2f}, FPR: {:.2f}'.
+              format(thresholds[n],safe(i[0],i[0]+i[1]),safe(i[2],i[2]+i[3])))
     
     #%% Cleanup and mark successfull completion
     
     run.finish()
     
-#%% Print experiment summary
-
-run = wandb.init(project=args.project, group=args.group, name=args.name+'_Summary', job_type= 'Summary',config=config) # Log hyperparameters WandB
-
-df.to_pickle(os.path.join(result_path,'..','dataframe_'+'_'.join([args.project,args.group,args.name])+'.npy'))
-conf_all = conf_all/i
     
-keys = list(parameters.keys())
-
-print('\n\nGeneral results:')          
-
-#%% Plot cross-validation result
-
-if config['Cross-validation'] == True:
-    
-    mean = df.Val_Mae.mean()
-    std = df.Val_Mae.std()
-    
-    print('\nValidation MAE accuracy: {:.5f} + {:.5f}\n'.format(mean,std)) 
-    
-    for j in range(len(df)):
-        print(str(j)+': {:.5f}'.format(df.iloc[j][0]))
-        
-    mean = df.Test_Mae.mean()
-    std = df.Test_Mae.std()
-        
-    print('\nTesting MAE accuracy: {:.5f} + {:.5f}\n'.format(mean,std)) 
-    
-    for j in range(len(df)):
-        print(str(j)+': {:.5f}'.format(df.iloc[j][1]))
-    
-#%% Plot results grouped by hyperparameters
-   
-for i in keys:
-    if len(df[i].unique())>1:
-        
-        print('\n Val MAE value for '+i)            
-        mean = df.groupby(df[i])['Val_Mae'].mean()
-        std = df.groupby(df[i])['Val_Mae'].std()
-        
-        for j,k,m in zip(mean.index,mean.values,std.values):
-            print(str(j)+': {:.5f} + {:.5f}'.format(k,m))
-            
-        print('\n Test MAE value for '+i)            
-        mean = df.groupby(df[i])['Test_Mae'].mean()
-        std = df.groupby(df[i])['Test_Mae'].std()
-        
-        for j,k,m in zip(mean.index,mean.values,std.values):
-            print(str(j)+': {:.5f} + {:.5f}'.format(k,m))
-
-if config['Cross-validation'] == False:
-    group_by = [keys.index(i) for i in results_by] 
-    
-    for g in group_by:
-        
-        print('\n\nBy '+keys[g]+':')        
-        
-        for i in list(keys.copy()[:g]+keys.copy()[g+1:]):
-            if len(df[i].unique())>1:
-                
-                print('\nMean value for '+i)            
-                mean = df.groupby([df[keys[g]],df[i]])['Test_Mae'].mean()
-                std = df.groupby([df[keys[g]],df[i]])['Test_Mae'].std()
-                
-                for j,k,m in zip(mean.index,mean.values,std.values):
-                    print(str(j)+': {:.5f} + {:.5f}'.format(k,m)) 
-    print('\n')
-
-print('\nThresholding results:\n')
-for n,i in enumerate(conf_all):
-    print('Th={:01d} - TP: {:.2f}, FP: {:.2f}, TN: {:.2f}, FN: {:.2f}'.
-          format(thresholds[n],i[0],i[1],i[2],i[3]))
-    
-def safe(x,y):
-    if y == 0:
-        return 0
-    return x / y   
-        
-    
-print('\nRates:\n')
-for n,i in enumerate(conf_all):
-
-    print('Th={:01d} - TPR: {:.2f}, FPR: {:.2f}'.
-          format(thresholds[n],safe(i[0],i[0]+i[1]),safe(i[2],i[2]+i[3])))
-
-#%% Cleanup and mark successfull completion
-
-run.finish()
-
-
