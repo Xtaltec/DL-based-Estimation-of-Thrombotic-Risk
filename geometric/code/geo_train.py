@@ -25,13 +25,11 @@ def parseArguments():
                         help="Choose the name of the project to be logged into W&B.")
     parser.add_argument("--group", "-gr",  type=str, default='Prueba',
                         help="Choose the name of the group of the runs.")
-    parser.add_argument("--name", "-na",  type=str, default='Run',
-                        help="Choose the name of each of the runs.")
     parser.add_argument("--data", "-d",  nargs='+', type=str, default=['ECAP'],
                         help="Choose dataset to be employed when running the code.")
     parser.add_argument("--path", "-p",  type=str, default='D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
                         help="Base path with the code and data folders")
-    parser.add_argument("--folds", "-f", type=int, default=8,
+    parser.add_argument("--folds", "-f", type=int, default=1,
                         help="Number of folds if cross-validation == True (Not list).")
     parser.add_argument("--num_epoch", "-ep",  nargs='+', type=int, default=[100],
                         help="Number of epochs")
@@ -118,8 +116,8 @@ def evaluate(loader,len_data):
         for data in loader:
 
             data = data.to(device) # Data to GPU
-            pred = model(data) if 'Log' not in config["Dataset"] else torch.exp(model(data)) # Predict
-            label = data.y.to(device) if 'Log' not in config["Dataset"] else torch.exp(data.y.to(device)) # Label to GPU
+            pred = model(data) if 'Log' not in setup["Dataset"] else torch.exp(model(data)) # Predict
+            label = data.y.to(device) if 'Log' not in setup["Dataset"] else torch.exp(data.y.to(device)) # Label to GPU
             
             loss = crit(pred, label) # Compute loss
             conf += thresholding(pred, label)/data.y.shape[0] # Compute correct higher percentiles
@@ -144,8 +142,8 @@ def predict(loader):
             data = data.to(device) # Batch to GPU
             pred = model(data) # Predict
             
-            label = data.y.detach().cpu().numpy() if 'Log' not in config["Dataset"] else np.exp(data.y.detach().cpu().numpy()) # Ground truth
-            pred = pred.detach().cpu().numpy() if 'Log' not in config["Dataset"] else np.exp(pred.detach().cpu().numpy()) # Prediction
+            label = data.y.detach().cpu().numpy() if 'Log' not in setup["Dataset"] else np.exp(data.y.detach().cpu().numpy()) # Ground truth
+            pred = pred.detach().cpu().numpy() if 'Log' not in setup["Dataset"] else np.exp(pred.detach().cpu().numpy()) # Prediction
         
             labels.append(label) # Save batch Ground truth
             predictions.append(pred) # Save batch Prediction
@@ -204,8 +202,6 @@ def result_plotting(n_images):
         # Get the coordinate and connectivity data
         coord += [dataset[or_case].coord.numpy()] 
         connectivity += [dataset[or_case].connectivity.numpy()]
-        
-        #print('Maximum value of y is: '+str(labels[k].max())+' and mean is: '+str(labels[k].mean()))
 
     # Save npz array with the results of this iteration
     np.savez(join(result_path,'Temp.npz'),labels=labels,predictions=predictions,indices=indices,coord=coord,connectivity=connectivity)
@@ -249,268 +245,279 @@ if __name__ == "__main__":
     
     hyp_name  = ["Dataset","Folds","Epochs", "Learning rate", "Batch size", "Drop rate","Layer depth", "Hidden features","Activation"
              ,"Spline or Sage", "Kernel size", "Weight decay","Split", "Seed", 'Loss','Cross-validation']
+
+    hyp_short  = np.array(["","f","ep", "lr", "bs", "dr","depth", "hidden","act"
+             ,"spline", "ks", "wd","sp", "seed", 'loss','cross'])
     
     #%% Dataframe to store all the data according to the employed keys
     
-    if parameters['cross'][0] == True:
+    if parameters['cross'][0] == False and parameters['folds'][0]!=1 :
+        raise ValueError('If not cross-validation folds should be == 1')
         
-        if sum([len(i) for i in [v for v in parameters.values()]])> len(parameters):
-            raise ValueError('In cross-validation use a single value per hyperparameter')
-            
-        parameters['num_epoch'] = parameters['num_epoch']*parameters['folds'][0] # Repeat training as many times as folds
+    name_list = np.array([1 if len(i)>1 else 0 for i in parameters.values()]).astype(bool) # Array with the differential hyperparameters
     
-    df = pd.DataFrame(columns = list(['Val_Mae','Test_Mae'])+list(parameters.keys()))
+    df = pd.DataFrame(columns = list(['Val_Mae','Test_Mae'])+list(parameters.keys())) # Add the columns for the validation and test values
     df['Val_Mae'],df['Test_Mae']= df['Val_Mae'].astype(float),df['Test_Mae'].astype(float)
-    conf_all = np.zeros([len(thresholds),4])
+    conf_all = np.zeros([len(thresholds),4]) # Array to safe the confusion matrix data
     
     # Set experiment name
     param_values = [v for v in parameters.values()]
     
     #%% Grid search loop
        
-    i = 0
+    i,setup_old = 0,None
     
-    for hyper in product(*param_values): 
-         
-        i+=1    
-    
-        #%% Create log in hyperdash for monitoring
-        config = dict(zip(hyp_name,hyper))
-        run = wandb.init(project=args.project, group=args.group, name=config['Dataset'], job_type='Run',config=config)
-    
-        wandb.define_metric("Train loss", summary="min")
-        wandb.define_metric("Validation loss", summary="min")
-        wandb.define_metric("Test loss", summary="min")
+    # Repeat run with given hyperparameters as many times as folds
+    for hyper in product(*param_values):
+        for _ in range(parameters['folds'][0]):
+             
+            i+=1    
+            
+            # Run name based on the parameters used in the grid search
+            run_name = '_'.join(['_'.join([x,y]) for x,y in zip(hyp_short[name_list],np.array(hyper).astype(str)[name_list])])[1:]
+            
+            #%% Create log in hyperdash for monitoring
+            setup = dict(zip(hyp_name,hyper))
+            run = wandb.init(project=args.project, group=args.group, name=run_name, job_type='Run',config=setup)
         
-        print('\n')
+            wandb.define_metric("Train loss", summary="min")
+            wandb.define_metric("Validation loss", summary="min")
+            wandb.define_metric("Test loss", summary="min")
+            
+            print('\n')
+            
+            #%% Save results depending on experiment
+          
+            result_path = normpath(join(args.path,'results/','_'.join([args.project,args.group,run_name])))
+            Path(result_path).mkdir(parents=True, exist_ok=True)
         
-        #%% Save results depending on experiment
-      
-        result_path = normpath(join(args.path,'results/','_'.join([args.project,args.group,args.name])))
-        Path(result_path).mkdir(parents=True, exist_ok=True)
-    
-        #%% Load dataset and divide the data in training and testing
-        
-        if config['Cross-validation'] == False:
+            #%% Load dataset and divide the data in training and testing
             
-            dataset = torch.load(join(data_path,config['Dataset']+'.dataset'))
-        
-            # Normalize vertex-wise coordinates
-            norm = T.NormalizeScale()
-            norm(dataset.data)
-            
-            num_cases = dataset.len() # Number of cases
-            indices = list(np.arange(num_cases)) # Indices of all cases
-            
-            torch.manual_seed(config['Seed']) if config['Seed'] != None else False # Set random seed if not None
-            
-            train_all = random.sample(indices,int(round(num_cases*config['Split'])))
-            val_ind = random.sample(train_all,int(np.ceil(len(train_all)*0.1)))
-            train_ind = list(np.setdiff1d(train_all,val_ind))
-            test_ind = list(np.setdiff1d(indices,train_all))
-            
-        elif i == 1 and config['Cross-validation'] == True:
-            
-            dataset = torch.load(join(data_path,config['Dataset']+'.dataset'))
-            
-            # Normalize vertex-wise coordinates
-            norm = T.NormalizeScale()
-            norm(dataset.data)
-            
-            num_cases = dataset.len() # Number of cases
-            indices = list(np.arange(num_cases)) # Indices of all cases
-            
-            # Shuffle the dataset
-            dataset = dataset.shuffle()
-    
-            # Divide the dataset in folds
-            folds = np.array_split(indices, config['Folds'])
+            if setup['Cross-validation'] == False:
                 
-        #%% Choose each fold for each iteration and loader instantiation
-        
-        if config['Cross-validation'] == True:    
-            test_ind = folds[i-1] # Select testing cases for the iteration
-            train_ind = list(np.setdiff1d(indices, test_ind)) # Remaining cases for training
-            val_ind = random.sample(list(train_ind),round(len(train_ind)*0.1)) # Validation case %10 of training data
-            train_ind = list(np.setdiff1d(train_ind, val_ind)) # Remove validation data from training
+                dataset = torch.load(join(data_path,setup['Dataset']+'.dataset'))
             
-        train_dataset,val_dataset,test_dataset = dataset[list(train_ind)],dataset[list(val_ind)],dataset[list(test_ind)]
-    
-        print(train_dataset);print(val_dataset);print(test_dataset)
-        
-        #print('Maximum value of y is: '+str(test_dataset.data.y.max())+' and mean is: '+str(test_dataset.data.y.mean()))
-        
-        # Pass the data to the loader
-        train_loader,val_loader,test_loader = DataLoader(train_dataset, batch_size=config['Batch size']),DataLoader(val_dataset, batch_size=config['Batch size']),DataLoader(test_dataset, batch_size=1) 
-       
-        #%% Check GPU device availability
-        
-        use_cuda = torch.cuda.is_available()
-        device = torch.device("cuda:0" if use_cuda else "cpu")
-        print('Let\'s use', torch.cuda.device_count(), 'GPUs!')
-         
-        #%% Create model instance
-        
-        model = GeometricPointNet(config['Spline or Sage'],config['Layer depth'],config['Hidden features'],config['Drop rate'],config['Kernel size'],config['Activation'])
-        
-        # If more than one GPU available paralelize
-        if torch.cuda.device_count() > 1: 
-            model = DataParallel(model) 
-    
-        model.to(device)
-        
-        #num_epoch = int(iterations/train_len + 0.5)
-        print(model) # print full net
-        model_parameters = filter(lambda p: p.requires_grad,model.parameters())
-        params = sum([np.prod(p.size()) for p in model_parameters])
-        print("Initialized model with {} trainable params ".format(params))
-        
-        #%% Model loss function and optimizer
-        
-        if config['Loss'] == 'MSE':
-            crit = torch.nn.MSELoss()
-        elif config['Loss'] == 'SmoothL1':
-            crit = torch.nn.SmoothL1Loss()
-        else:
-            crit = torch.nn.L1Loss()
-            
-        optimizer = torch.optim.Adam(model.parameters(),lr=config['Learning rate'], weight_decay=config['Weight decay'])
-        
-        #%% Training loop    
-        
-        results = 1000*np.ones([config['Epochs'],3])
-        thres = np.zeros([config['Epochs'],len(thresholds),4])
-        
-        for epoch in range(config['Epochs']):
-            
-            loss = train(train_loader)
-            
-            loss_val,conf_val= evaluate(val_loader,len(val_dataset)) 
-            loss_test,conf_test= evaluate(test_loader,len(test_dataset))
-                            
-            print('\nEpoch: {:03d}'. format(epoch))
-            
-            wandb.log({"Train loss": loss, "Validation loss": loss_val, "Test loss": loss_test})
-            
-            # Plot prediction images in wandb
-            if loss_test < np.min(results[:,2]):
+                # Normalize vertex-wise coordinates
+                norm = T.NormalizeScale()
+                norm(dataset.data)
                 
-                n_images = 5
+                num_cases = dataset.len() # Number of cases
+                indices = list(np.arange(num_cases)) # Indices of all cases
                 
-                labels,predictions,indices = predict(test_loader)
+                random.seed(setup['Seed']) if setup['Seed'] != None else False # Set random seed if not None
                 
-                result_plotting(n_images)
+                train_all = random.sample(indices,int(round(num_cases*setup['Split'])))
+                val_ind = random.sample(train_all,int(np.ceil(len(train_all)*0.1)))
+                train_ind = list(np.setdiff1d(train_all,val_ind))
+                test_ind = list(np.setdiff1d(indices,train_all))
+                
+            elif setup_old != setup and setup['Cross-validation'] == True:
+                
+                dataset = torch.load(join(data_path,setup['Dataset']+'.dataset'))
+                
+                # Normalize vertex-wise coordinates
+                norm = T.NormalizeScale()
+                norm(dataset.data)
+                
+                num_cases = dataset.len() # Number of cases
+                indices = list(np.arange(num_cases)) # Indices of all cases
+                
+                torch.manual_seed(setup['Seed']) if setup['Seed'] != None else False # Set random seed if not None
+                
+                # Shuffle the dataset
+                dataset = dataset.shuffle()
+        
+                # Divide the dataset in folds
+                folds = np.array_split(indices, setup['Folds'])
+                
+                setup_old = setup.copy() # Placeholder to detect when setup changes
+                f = 0 # Counter for folds
+                    
+            #%% Choose each fold for each iteration and loader instantiation
             
-            results[epoch,0],results[epoch,1],results[epoch,2]= loss,loss_val,loss_test
-            thres[epoch,:,:]=conf_test
+            if setup['Cross-validation'] == True:    
+                test_ind = folds[f] # Select testing cases for the iteration
+                train_ind = list(np.setdiff1d(indices, test_ind)) # Remaining cases for training
+                val_ind = random.sample(list(train_ind),round(len(train_ind)*0.1)) # Validation case %10 of training data
+                train_ind = list(np.setdiff1d(train_ind, val_ind)) # Remove validation data from training
+                f += 1 # Counter for cross-validations folds
                 
-        #%% Print best results in iteration and save
+            train_dataset,val_dataset,test_dataset = dataset[list(train_ind)],dataset[list(val_ind)],dataset[list(test_ind)]
         
-        min_val = np.min(results[:,1])
-        mae_test = float(results[np.where(np.isclose(results[:,1],min_val)),2].squeeze())
-        conf_final = thres[np.where(np.isclose(results[:,1],min_val))[0][0],:,:]
-        
-        df.loc[i] = list([min_val,mae_test])+list(hyper) 
+            print(train_dataset);print(val_dataset);print(test_dataset)
+            print(test_ind)
             
-        print('\nFinal - Loss: {:.5f}, Accuracy: {:.5f}\n'.
-              format(np.min(results[:,0]),np.min(results[:,2])))
+            # Pass the data to the loader
+            train_loader,val_loader,test_loader = DataLoader(train_dataset, batch_size=setup['Batch size']),DataLoader(val_dataset, batch_size=setup['Batch size']),DataLoader(test_dataset, batch_size=1) 
+           
+            #%% Check GPU device availability
+            
+            use_cuda = torch.cuda.is_available()
+            device = torch.device("cuda:0" if use_cuda else "cpu")
+            print('Let\'s use', torch.cuda.device_count(), 'GPUs!')
+             
+            #%% Create model instance
+            
+            model = GeometricPointNet(setup['Spline or Sage'],setup['Layer depth'],setup['Hidden features'],setup['Drop rate'],setup['Kernel size'],setup['Activation'])
+            
+            # If more than one GPU available paralelize
+            if torch.cuda.device_count() > 1: 
+                model = DataParallel(model) 
         
-        print('\nFinal Confusion matrix Th=4 - TP: {:.2f}, FP: {:.2f}, TN: {:.2f}, FN: {:.2f}\n'.
-              format(conf_final[3,0],conf_final[3,1],conf_final[3,2],conf_final[3,3]))
+            model.to(device)
+            
+            #num_epoch = int(iterations/train_len + 0.5)
+            print(model) # print full net
+            model_parameters = filter(lambda p: p.requires_grad,model.parameters())
+            params = sum([np.prod(p.size()) for p in model_parameters])
+            print("Initialized model with {} trainable params ".format(params))
+            
+            #%% Model loss function and optimizer
+            
+            if setup['Loss'] == 'MSE':
+                crit = torch.nn.MSELoss()
+            elif setup['Loss'] == 'SmoothL1':
+                crit = torch.nn.SmoothL1Loss()
+            else:
+                crit = torch.nn.L1Loss()
+                
+            optimizer = torch.optim.Adam(model.parameters(),lr=setup['Learning rate'], weight_decay=setup['Weight decay'])
+            
+            #%% Training loop    
+            
+            results = 1000*np.ones([setup['Epochs'],3])
+            thres = np.zeros([setup['Epochs'],len(thresholds),4])
+            
+            for epoch in range(setup['Epochs']):
+                
+                loss = train(train_loader)
+                
+                loss_val,conf_val= evaluate(val_loader,len(val_dataset)) 
+                loss_test,conf_test= evaluate(test_loader,len(test_dataset))
+                                
+                print('\nEpoch: {:03d}'. format(epoch))
+                
+                wandb.log({"Train loss": loss, "Validation loss": loss_val, "Test loss": loss_test})
+                
+                # Plot prediction images in wandb
+                if loss_test < np.min(results[:,2]):
+                    
+                    n_images = 5
+                    
+                    labels,predictions,indices = predict(test_loader)
+                    
+                    result_plotting(n_images)
+                
+                results[epoch,0],results[epoch,1],results[epoch,2]= loss,loss_val,loss_test
+                thres[epoch,:,:]=conf_test
+                    
+            #%% Print best results in iteration and save
+            
+            min_val = np.min(results[:,1])
+            mae_test = float(results[np.where(np.isclose(results[:,1],min_val)),2].squeeze())
+            conf_final = thres[np.where(np.isclose(results[:,1],min_val))[0][0],:,:]
+            
+            df.loc[i] = list([min_val,mae_test])+list(hyper) 
+                
+            print('\nFinal - Loss: {:.5f}, Accuracy: {:.5f}\n'.
+                  format(np.min(results[:,0]),np.min(results[:,2])))
+            
+            print('\nFinal Confusion matrix Th=4 - TP: {:.2f}, FP: {:.2f}, TN: {:.2f}, FN: {:.2f}\n'.
+                  format(conf_final[3,0],conf_final[3,1],conf_final[3,2],conf_final[3,3]))
+            
+            conf_all += conf_final
+            
+            #%% Cleanup and mark successfull completion
+            
+            run.finish()
         
-        conf_all += conf_final
+        #%% Print experiment summary
+        
+        run = wandb.init(project=args.project, group=args.group, name=run_name+'_Summary', job_type= 'Summary',config=setup) # Log hyperparameters WandB
+        
+        df.to_pickle(os.path.join(result_path,'..','dataframe_'+'_'.join([args.project,args.group,run_name])+'.npy'))
+        conf_all = conf_all/i
+            
+        keys = list(parameters.keys())
+        
+        print('\n\nGeneral results:')          
+        
+        #%% Plot cross-validation result
+        
+        if setup['Cross-validation'] == True:
+            
+            mean = df.Val_Mae.mean()
+            std = df.Val_Mae.std()
+            
+            print('\nValidation MAE accuracy: {:.5f} + {:.5f}\n'.format(mean,std)) 
+            
+            for j in range(len(df)):
+                print(str(j)+': {:.5f}'.format(df.iloc[j][0]))
+                
+            mean = df.Test_Mae.mean()
+            std = df.Test_Mae.std()
+                
+            print('\nTesting MAE accuracy: {:.5f} + {:.5f}\n'.format(mean,std)) 
+            
+            for j in range(len(df)):
+                print(str(j)+': {:.5f}'.format(df.iloc[j][1]))
+            
+        #%% Plot results grouped by hyperparameters
+           
+        for i in keys:
+            if len(df[i].unique())>1:
+                
+                print('\n Val MAE value for '+i)            
+                mean = df.groupby(df[i])['Val_Mae'].mean()
+                std = df.groupby(df[i])['Val_Mae'].std()
+                
+                for j,k,m in zip(mean.index,mean.values,std.values):
+                    print(str(j)+': {:.5f} + {:.5f}'.format(k,m))
+                    
+                print('\n Test MAE value for '+i)            
+                mean = df.groupby(df[i])['Test_Mae'].mean()
+                std = df.groupby(df[i])['Test_Mae'].std()
+                
+                for j,k,m in zip(mean.index,mean.values,std.values):
+                    print(str(j)+': {:.5f} + {:.5f}'.format(k,m))
+        
+        if setup['Cross-validation'] == False:
+            group_by = [keys.index(i) for i in results_by] 
+            
+            for g in group_by:
+                
+                print('\n\nBy '+keys[g]+':')        
+                
+                for i in list(keys.copy()[:g]+keys.copy()[g+1:]):
+                    if len(df[i].unique())>1:
+                        
+                        print('\nMean value for '+i)            
+                        mean = df.groupby([df[keys[g]],df[i]])['Test_Mae'].mean()
+                        std = df.groupby([df[keys[g]],df[i]])['Test_Mae'].std()
+                        
+                        for j,k,m in zip(mean.index,mean.values,std.values):
+                            print(str(j)+': {:.5f} + {:.5f}'.format(k,m)) 
+            print('\n')
+        
+        print('\nThresholding results:\n')
+        for n,i in enumerate(conf_all):
+            print('Th={:01d} - TP: {:.2f}, FP: {:.2f}, TN: {:.2f}, FN: {:.2f}'.
+                  format(thresholds[n],i[0],i[1],i[2],i[3]))
+            
+        def safe(x,y):
+            if y == 0:
+                return 0
+            return x / y   
+                
+            
+        print('\nRates:\n')
+        for n,i in enumerate(conf_all):
+        
+            print('Th={:01d} - TPR: {:.2f}, FPR: {:.2f}'.
+                  format(thresholds[n],safe(i[0],i[0]+i[1]),safe(i[2],i[2]+i[3])))
         
         #%% Cleanup and mark successfull completion
         
         run.finish()
-        
-    #%% Print experiment summary
-    
-    run = wandb.init(project=args.project, group=args.group, name=args.name+'_Summary', job_type= 'Summary',config=config) # Log hyperparameters WandB
-    
-    df.to_pickle(os.path.join(result_path,'..','dataframe_'+'_'.join([args.project,args.group,args.name])+'.npy'))
-    conf_all = conf_all/i
-        
-    keys = list(parameters.keys())
-    
-    print('\n\nGeneral results:')          
-    
-    #%% Plot cross-validation result
-    
-    if config['Cross-validation'] == True:
-        
-        mean = df.Val_Mae.mean()
-        std = df.Val_Mae.std()
-        
-        print('\nValidation MAE accuracy: {:.5f} + {:.5f}\n'.format(mean,std)) 
-        
-        for j in range(len(df)):
-            print(str(j)+': {:.5f}'.format(df.iloc[j][0]))
-            
-        mean = df.Test_Mae.mean()
-        std = df.Test_Mae.std()
-            
-        print('\nTesting MAE accuracy: {:.5f} + {:.5f}\n'.format(mean,std)) 
-        
-        for j in range(len(df)):
-            print(str(j)+': {:.5f}'.format(df.iloc[j][1]))
-        
-    #%% Plot results grouped by hyperparameters
-       
-    for i in keys:
-        if len(df[i].unique())>1:
-            
-            print('\n Val MAE value for '+i)            
-            mean = df.groupby(df[i])['Val_Mae'].mean()
-            std = df.groupby(df[i])['Val_Mae'].std()
-            
-            for j,k,m in zip(mean.index,mean.values,std.values):
-                print(str(j)+': {:.5f} + {:.5f}'.format(k,m))
-                
-            print('\n Test MAE value for '+i)            
-            mean = df.groupby(df[i])['Test_Mae'].mean()
-            std = df.groupby(df[i])['Test_Mae'].std()
-            
-            for j,k,m in zip(mean.index,mean.values,std.values):
-                print(str(j)+': {:.5f} + {:.5f}'.format(k,m))
-    
-    if config['Cross-validation'] == False:
-        group_by = [keys.index(i) for i in results_by] 
-        
-        for g in group_by:
-            
-            print('\n\nBy '+keys[g]+':')        
-            
-            for i in list(keys.copy()[:g]+keys.copy()[g+1:]):
-                if len(df[i].unique())>1:
-                    
-                    print('\nMean value for '+i)            
-                    mean = df.groupby([df[keys[g]],df[i]])['Test_Mae'].mean()
-                    std = df.groupby([df[keys[g]],df[i]])['Test_Mae'].std()
-                    
-                    for j,k,m in zip(mean.index,mean.values,std.values):
-                        print(str(j)+': {:.5f} + {:.5f}'.format(k,m)) 
-        print('\n')
-    
-    print('\nThresholding results:\n')
-    for n,i in enumerate(conf_all):
-        print('Th={:01d} - TP: {:.2f}, FP: {:.2f}, TN: {:.2f}, FN: {:.2f}'.
-              format(thresholds[n],i[0],i[1],i[2],i[3]))
-        
-    def safe(x,y):
-        if y == 0:
-            return 0
-        return x / y   
-            
-        
-    print('\nRates:\n')
-    for n,i in enumerate(conf_all):
-    
-        print('Th={:01d} - TPR: {:.2f}, FPR: {:.2f}'.
-              format(thresholds[n],safe(i[0],i[0]+i[1]),safe(i[2],i[2]+i[3])))
-    
-    #%% Cleanup and mark successfull completion
-    
-    run.finish()
     
     
