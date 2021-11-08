@@ -10,3 +10,5 @@ geometric/code/__pycache__/modelGeo.cpython-37.pyc
 *.mat
 fcn/code/WriteVTK.m
 *.sh
+*.png
+*.npz

@@ -6,7 +6,7 @@ Input hyperparameters can be set up through argparse.
 @author: Xabier Morales Ferez - xabier.morales@upf.edu
 """
 
-import os, random, torch , argparse, numpy as np, pandas as pd, pyvista as pv, matplotlib.image as mpimg
+import os, random, torch, subprocess, argparse, numpy as np, pandas as pd, pyvista as pv, matplotlib.image as mpimg
 from pathlib import Path
 from os.path import normpath,join
 from itertools import product
@@ -15,7 +15,6 @@ from torch.nn import DataParallel
 from torch_geometric.data import DataLoader
 import torch_geometric.transforms as T
 from torchvision.utils import make_grid
-import subprocess
 
 #%% Parse arguments
 
@@ -30,7 +29,7 @@ def parseArguments():
                         help="Choose the name of each of the runs.")
     parser.add_argument("--data", "-d",  nargs='+', type=str, default=['ECAP'],
                         help="Choose dataset to be employed when running the code.")
-    parser.add_argument("--path", "-p",  type=str, default='D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
+    parser.add_argument("--path", "-p",  type=str, default='C:\\Users\\Xabier\PhD\\Frontiers\\GitHub\\geometric\\',#'D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
                         help="Base path with the code and data folders")
     parser.add_argument("--folds", "-f", type=int, default=8,
                         help="Number of folds if cross-validation == True (Not list).")
@@ -38,13 +37,13 @@ def parseArguments():
                         help="Number of epochs")
     parser.add_argument("--learn_rate", "-lr",  nargs='+', type=float, default=[0.001],
                         help="Learning rate")
-    parser.add_argument("--batch_size", "-bs", nargs='+',type=int, default=[16],
+    parser.add_argument("--batch_size", "-bs", nargs='+',type=int, default=[2],#16],
                         help="Number of folds if cross-validation == True")
     parser.add_argument("--drop_rate", "-dr",  nargs='+', type=float, default=[0.1],
                         help="Drop rate")
-    parser.add_argument("--depth", "-dp",  nargs='+', type=int, default=[12],
+    parser.add_argument("--depth", "-dp",  nargs='+', type=int, default=[2],#12],
                         help="Number of hidden layers")
-    parser.add_argument("--hidden", "-hid",  nargs='+', type=int, default=[32],
+    parser.add_argument("--hidden", "-hid",  nargs='+', type=int, default=[8],#32],
                         help="Depth of hidden layers")
     parser.add_argument("--activation", "-act",  nargs='+', type=str, default=['elu'],
                         help="Activation function. 'elu' or 'relu'")
@@ -193,6 +192,48 @@ def confusion(prediction, truth):
     false_negatives = torch.sum(confusion_vector == 0).item()
 
     return [true_positives, false_positives, true_negatives, false_negatives]
+
+def result_plotting(n_images):
+    
+    image_GT,image_PR = [],[] # List of prediction and ground truth images
+    for k in range(n_images):
+        
+        or_case = int(np.where(np.array(dataset.data.case)==indices[k])[0][0]) # Get index of case
+        coord, connectivity = dataset[or_case].coord.numpy(),dataset[or_case].connectivity # Get the coordinate and connectivity data
+ 
+        # Save npz array with the results of this iteration
+        np.savez(join(result_path,'Temp.npz'),labels=labels[k],predictions=predictions[k],indices=indices[k],coord=coord,connectivity=connectivity)
+    
+        # Call mesh_plotter_2 to create the figures
+        subprocess.call(['python', 'mesh_plotter.py','-p',result_path])
+        
+        image_GT += [mpimg.imread(join(result_path,'Temp_GT.png'))] # Save all GT images in list
+        image_PR += [mpimg.imread(join(result_path,'Temp_PR.png'))] # Save all PR images in list
+        
+    image = np.moveaxis(np.concatenate([np.stack(image_GT,axis=0),np.stack(image_PR,axis=0)]),3,1)
+    image_grid = make_grid(torch.tensor(image), nrow=n_images)
+    images = wandb.Image(image_grid,caption = "Epoch "+str(epoch))
+    wandb.log({"Prediction": images})
+    
+def result_plotting2(n_images):
+    
+    coord,connectivity = [],[] # List of prediction and ground truth images
+    for k in range(n_images):
+        
+        or_case = int(np.where(np.array(dataset.data.case)==indices[k])[0][0]) # Get index of case
+        
+        # Get the coordinate and connectivity data
+        coord += [dataset[or_case].coord.numpy()] 
+        connectivity += [dataset[or_case].connectivity]
+ 
+    # Save npz array with the results of this iteration
+    np.savez(join(result_path,'Temp.npz'),labels=labels,predictions=predictions,indices=indices,coord=coord,connectivity=connectivity)
+
+    # Call mesh_plotter_2 to create the figures
+    subprocess.call(['python', 'mesh_plotter_2.py','-p',result_path])
+        
+    images = wandb.Image(join(result_path,'Result_'+str(epoch).zfill(3)+'.png'),caption = "Epoch "+str(epoch))
+    wandb.log({"Prediction": images})
 
 if __name__ == "__main__":
         
@@ -373,71 +414,11 @@ if __name__ == "__main__":
                 
                 labels,predictions,indices = predict(test_loader)
                 
-                #%% 1st approach
+                # t0 = time.time()
+                # result_plotting(n_images)
+                # print(time.time()-t0)
                 
-                # cases = np.array(dataset.data.case)
-                
-                # np.savez(join(result_path,'Result.npz'),labels=labels,predictions=predictions,indices=indices)
-                # torch.save(dataset,join(result_path,'Result.dataset'))
-                
-                # subprocess.call(['python', 'mesh_plotter.py','-p',result_path,'-e',str(epoch),'-ni',str(n_images)])
-                
-                # images = wandb.Image(mpimg.imread(join(result_path,'Result_'+str(epoch).zfill(3)+'.png')),caption = "Epoch "+str(epoch))
-                # wandb.log({"Prediction": images})
-                
-                #%% 2nd approach
-                
-                
-                image_GT,image_PR = [],[]
-                for k in range(n_images):
-                    
-                    or_case = int(np.where(np.array(dataset.data.case)==indices[k])[0][0])
-                    coord, connectivity = dataset[or_case].coord.numpy(),dataset[or_case].connectivity
-               
-                    np.savez(join(result_path,'Temp.npz'),labels=labels[k],predictions=predictions[k],indices=indices[k],coord=coord,connectivity=connectivity)
-                
-                    subprocess.call(['python', 'mesh_plotter_2.py','-p',result_path])
-                    
-                    image_GT += [mpimg.imread(join(result_path,'Temp_GT.png'))]
-                    image_PR += [mpimg.imread(join(result_path,'Temp_GT.png'))]
-                    
-                image = np.moveaxis(np.concatenate([np.stack(image_GT,axis=0),np.stack(image_PR,axis=0)]),3,1).astype('int')/255
-                image_grid = make_grid(torch.tensor(image), nrow=n_images)
-                images = wandb.Image(image_grid,caption = "Epoch "+str(epoch))
-                wandb.log({"Prediction": images})
-            
-                #%%
-                
-                # image_GT,image_PR = [],[]
-                # for k in range(n_images):
-                    
-                #     or_case = int(np.where(np.array(dataset.data.case)==indices[k])[0][0])
-                #     mesh_GT = pv.PolyData(dataset[or_case].coord.numpy(),dataset[or_case].connectivity)
-                #     mesh_PR = pv.PolyData(dataset[or_case].coord.numpy(),dataset[or_case].connectivity)
-                    
-                #     mesh_GT.point_data['ECAP'] = labels[i]
-                #     mesh_PR.point_data['ECAP'] = predictions[i]
-                    
-                #     # PyVista headless display
-                #     pv.start_xvfb()
-                #     pv.set_plot_theme("document") # White background
-                #     p_GT = pv.Plotter(shape=(1,1), border=False, title = str(indices[k]),window_size=[200,300],off_screen=True)
-                #     p_PR = pv.Plotter(shape=(1,1), border=False,window_size=[200,300],off_screen=True)
-        
-                #     p_GT.add_text("Ground truth",font_size=15)
-                #     p_GT.add_mesh(mesh_GT, scalars='ECAP',clim=[0,6], 
-                #                       scalar_bar_args=dict(position_x = 0.8,label_font_size=10,title_font_size=15))
-                   
-                #     p_PR.add_text("Prediction",font_size=15)
-                #     p_PR.add_mesh(mesh_PR, scalars='ECAP',clim=[0,6],show_scalar_bar=False)
-                    
-                #     image_GT += [p_GT.screenshot(None, return_img=True)]
-                #     image_PR += [p_PR.screenshot(None, return_img=True)]
-    
-                # image = np.moveaxis(np.concatenate([np.stack(image_GT,axis=0),np.stack(image_PR,axis=0)]),3,1).astype('int')/255
-                # image_grid = make_grid(torch.tensor(image), nrow=n_images)
-                # images = wandb.Image(image_grid,caption = "Epoch "+str(epoch))
-                # wandb.log({"Prediction": images})
+                result_plotting2(n_images)
             
             results[epoch,0],results[epoch,1],results[epoch,2]= loss,loss_val,loss_test
             thres[epoch,:,:]=conf_test
