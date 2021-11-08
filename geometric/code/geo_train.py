@@ -29,7 +29,7 @@ def parseArguments():
                         help="Choose the name of each of the runs.")
     parser.add_argument("--data", "-d",  nargs='+', type=str, default=['ECAP'],
                         help="Choose dataset to be employed when running the code.")
-    parser.add_argument("--path", "-p",  type=str, default='C:\\Users\\Xabier\PhD\\Frontiers\\GitHub\\geometric\\',#'D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
+    parser.add_argument("--path", "-p",  type=str, default='D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
                         help="Base path with the code and data folders")
     parser.add_argument("--folds", "-f", type=int, default=8,
                         help="Number of folds if cross-validation == True (Not list).")
@@ -37,13 +37,13 @@ def parseArguments():
                         help="Number of epochs")
     parser.add_argument("--learn_rate", "-lr",  nargs='+', type=float, default=[0.001],
                         help="Learning rate")
-    parser.add_argument("--batch_size", "-bs", nargs='+',type=int, default=[2],#16],
+    parser.add_argument("--batch_size", "-bs", nargs='+',type=int, default=[16],
                         help="Number of folds if cross-validation == True")
     parser.add_argument("--drop_rate", "-dr",  nargs='+', type=float, default=[0.1],
                         help="Drop rate")
-    parser.add_argument("--depth", "-dp",  nargs='+', type=int, default=[2],#12],
+    parser.add_argument("--depth", "-dp",  nargs='+', type=int, default=[12],
                         help="Number of hidden layers")
-    parser.add_argument("--hidden", "-hid",  nargs='+', type=int, default=[8],#32],
+    parser.add_argument("--hidden", "-hid",  nargs='+', type=int, default=[32],
                         help="Depth of hidden layers")
     parser.add_argument("--activation", "-act",  nargs='+', type=str, default=['elu'],
                         help="Activation function. 'elu' or 'relu'")
@@ -192,30 +192,9 @@ def confusion(prediction, truth):
     false_negatives = torch.sum(confusion_vector == 0).item()
 
     return [true_positives, false_positives, true_negatives, false_negatives]
-
+    
 def result_plotting(n_images):
-    
-    image_GT,image_PR = [],[] # List of prediction and ground truth images
-    for k in range(n_images):
-        
-        or_case = int(np.where(np.array(dataset.data.case)==indices[k])[0][0]) # Get index of case
-        coord, connectivity = dataset[or_case].coord.numpy(),dataset[or_case].connectivity # Get the coordinate and connectivity data
- 
-        # Save npz array with the results of this iteration
-        np.savez(join(result_path,'Temp.npz'),labels=labels[k],predictions=predictions[k],indices=indices[k],coord=coord,connectivity=connectivity)
-    
-        # Call mesh_plotter_2 to create the figures
-        subprocess.call(['python', 'mesh_plotter.py','-p',result_path])
-        
-        image_GT += [mpimg.imread(join(result_path,'Temp_GT.png'))] # Save all GT images in list
-        image_PR += [mpimg.imread(join(result_path,'Temp_PR.png'))] # Save all PR images in list
-        
-    image = np.moveaxis(np.concatenate([np.stack(image_GT,axis=0),np.stack(image_PR,axis=0)]),3,1)
-    image_grid = make_grid(torch.tensor(image), nrow=n_images)
-    images = wandb.Image(image_grid,caption = "Epoch "+str(epoch))
-    wandb.log({"Prediction": images})
-    
-def result_plotting2(n_images):
+    """ Takes predictions and plots them alongside the GT in W&B """
     
     coord,connectivity = [],[] # List of prediction and ground truth images
     for k in range(n_images):
@@ -224,17 +203,21 @@ def result_plotting2(n_images):
         
         # Get the coordinate and connectivity data
         coord += [dataset[or_case].coord.numpy()] 
-        connectivity += [dataset[or_case].connectivity]
- 
+        connectivity += [dataset[or_case].connectivity.numpy()]
+        
+        #print('Maximum value of y is: '+str(labels[k].max())+' and mean is: '+str(labels[k].mean()))
+
     # Save npz array with the results of this iteration
     np.savez(join(result_path,'Temp.npz'),labels=labels,predictions=predictions,indices=indices,coord=coord,connectivity=connectivity)
 
-    # Call mesh_plotter_2 to create the figures
-    subprocess.call(['python', 'mesh_plotter_2.py','-p',result_path])
+    # Call mesh_plotter to create the figures
+    subprocess.call(['python', 'mesh_plotter.py','-p',result_path,'-e',str(epoch),'-ni',str(n_images)])
         
+    # Send image for visualization in W&B
     images = wandb.Image(join(result_path,'Result_'+str(epoch).zfill(3)+'.png'),caption = "Epoch "+str(epoch))
     wandb.log({"Prediction": images})
 
+#%% Main code
 if __name__ == "__main__":
         
     #%% Set hyperparameters:
@@ -355,6 +338,8 @@ if __name__ == "__main__":
     
         print(train_dataset);print(val_dataset);print(test_dataset)
         
+        #print('Maximum value of y is: '+str(test_dataset.data.y.max())+' and mean is: '+str(test_dataset.data.y.mean()))
+        
         # Pass the data to the loader
         train_loader,val_loader,test_loader = DataLoader(train_dataset, batch_size=config['Batch size']),DataLoader(val_dataset, batch_size=config['Batch size']),DataLoader(test_dataset, batch_size=1) 
        
@@ -414,11 +399,7 @@ if __name__ == "__main__":
                 
                 labels,predictions,indices = predict(test_loader)
                 
-                # t0 = time.time()
-                # result_plotting(n_images)
-                # print(time.time()-t0)
-                
-                result_plotting2(n_images)
+                result_plotting(n_images)
             
             results[epoch,0],results[epoch,1],results[epoch,2]= loss,loss_val,loss_test
             thres[epoch,:,:]=conf_test
