@@ -18,7 +18,7 @@ from torch_geometric.data import InMemoryDataset
 from torch_geometric import transforms as T
 from sklearn.preprocessing import PowerTransformer
 
-#%% Parse arguments
+#%% Function definitions   
 
 def parseArguments():    
     
@@ -35,29 +35,6 @@ def parseArguments():
     args = parser.parse_args()
 
     return args
-
-args = parseArguments()
-
-if not os.name == 'posix':
-    
-    args.folder = 'LAA_Smoothed'
-    args.name = 'ECAP' # Define the name of the dataset. Options: ECAP,Burdeos,ECAP_rot,ECAPrem
-    args.rotation = 0 # Aleatory rotation of LAA
-    args.log_transform = 1 # Log transform ECAP data
-    
-#%%  Initialization
-
-if os.name == 'nt' and getpass.getuser()=='Xabier':
-    base_path = 'C:\\Users\\Xabier\\PhD\\Frontiers\\GitHub\\geometric\\data\\' # The general path to the LAA .vtk
-elif os.name == 'nt' and getpass.getuser()=='u164110':    
-    base_path = 'D:\\PhD\\DL\\Frontiers\\GitHub\\geometric\\data\\' # The general path to the LAA .vtk
-elif os.name == 'posix':
-    base_path = '/media/u164110/Data/PhD/Frontiers/geo/data/' # The general path to the LAA .vtk
-
-path_in = join(base_path,args.folder) # Base directory    
-path_torch = join(base_path,'TorchData/') # Output directory for temporal torch dataset
-
-#%% Function definitions   
 
 # PyTorch geometric transforms for pseudo-coordinates,...
 def torch_transform(graph):
@@ -76,25 +53,33 @@ def torch_transform(graph):
     
     return transformed
 
-# PyTorch InMemoryDataset class
 class ECAPdataset(InMemoryDataset):
-    def __init__(self, root, transform=None, pre_transform=None):
-        super(ECAPdataset, self).__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+    def __init__(self, input_data, output_path, transform=None, pre_transform=None):
+        super(ECAPdataset, self).__init__(None, transform, pre_transform)
+        self.data, self.slices = self.collate(input_data)
+        
+#%% Parse arguments
 
-    @property
-    def raw_file_names(self):
-        return []
-    @property
-    def processed_file_names(self):
-        return [path_torch+'processed.data']
+args = parseArguments()
 
-    def download(self):
-        pass
+if not os.name == 'posix': # Just for debugging purposes in local
     
-    def process(self):
-        data, slices = self.collate(dataset)
-        torch.save((data, slices), self.processed_paths[0]) 
+    args.folder = 'LAA_Smoothed'
+    args.name = 'ECAP' # Define the name of the dataset. Options: ECAP,Burdeos,ECAP_rot,ECAPrem
+    args.rotation = 1 # Aleatory rotation of LAA
+    args.log_transform = 0 # Log transform ECAP data
+    
+#%%  Initialization
+
+if os.name == 'nt' and getpass.getuser()=='Xabier':
+    base_path = 'C:\\Users\\Xabier\\PhD\\Frontiers\\GitHub\\geometric\\data\\' # The general path to the LAA .vtk
+elif os.name == 'nt' and getpass.getuser()=='u164110':    
+    base_path = 'D:\\PhD\\DL\\Frontiers\\GitHub\\geometric\\data\\' # The general path to the LAA .vtk
+elif os.name == 'posix':
+    base_path = '/media/u164110/Data/PhD/Frontiers/geo/data/' # The general path to the LAA .vtk
+
+path_in = join(base_path,args.folder) # Base directory    
+path_torch = join(base_path,'TorchData/') # Output directory for temporal torch dataset
 
 #%% Create dataset list
 
@@ -128,9 +113,9 @@ for g in geo:
     
     # Target feature of each node (ECAP)
     try:
-        ECAP = torch.tensor(mesh.point_arrays['ECAP_Both']).unsqueeze(1).float()   
+        ECAP = torch.tensor(mesh.point_data['ECAP_Both']).unsqueeze(1).float()   
     except:
-        ECAP = torch.tensor(mesh.point_arrays['ECAP']).unsqueeze(1).float()
+        ECAP = torch.tensor(mesh.point_data['ECAP']).unsqueeze(1).float()
         
     # Obtain the faces from the .vtk files
     face = torch.tensor(np.moveaxis(mesh.faces.reshape(-1,4)[:,1:],0,1))
@@ -149,7 +134,7 @@ for g in geo:
 
 #%% Create dataset instance 
 
-data_final = ECAPdataset(path_in)  
+data_final = ECAPdataset(dataset,base_path)  
 
 # Scale the curvature data
 scaler = PowerTransformer()
@@ -161,7 +146,7 @@ if args.log_transform == True:
 # Save the dataset
 torch.save(data_final,join(base_path,args.name+('_Rotated' if args.rotation == True else '')+('_Log' if args.log_transform == True else '') +'.dataset'))
 
-#%% Test rotation of geometries
+#%% Check rotation of geometries
 
 pv.set_plot_theme("document")
 plotter = pv.Plotter() 
@@ -169,7 +154,7 @@ plotter = pv.Plotter()
 for i in range(10):
     
     m = pv.PolyData(data_final[i].pos.numpy(),data_final[i].connectivity.numpy())
-    m.point_arrays['ECAP'] = data_final[i].y.numpy()
+    m.point_data['ECAP'] = data_final[i].y.numpy()
     
     plotter.add_mesh(m, scalars='ECAP', clim=[0,6], label=str(i))
     

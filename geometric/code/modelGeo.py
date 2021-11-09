@@ -9,7 +9,6 @@ import torch
 import torch.nn.functional as F
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, ELU, BatchNorm1d as BN, Dropout
 from torch_geometric.nn import SplineConv, SAGEConv, BatchNorm, global_max_pool
-from torch_geometric.data import InMemoryDataset
 
 #%% Create MLP with given channels sizes
 def MLP(channels, drop = True, p = 0.5):
@@ -21,45 +20,6 @@ def MLP(channels, drop = True, p = 0.5):
     
     return mlp
 
-#%% Dataset class
-
-class ECAPdataset(InMemoryDataset):
-    def __init__(self, root, transform=None, pre_transform=None):
-        super(ECAPdataset, self).__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
-
-    @property
-    def raw_file_names(self):
-        return []
-    @property
-    def processed_file_names(self):
-        return ['ECAP.dataset']
-
-    def download(self):
-        pass
-    
-    # def process(self):
-    #     data, slices = self.collate(dataset)
-    #     torch.save((data, slices), self.processed_paths[0])
-        
-class BurdeosDataset(InMemoryDataset):
-    def __init__(self, root, transform=None, pre_transform=None):
-        super(BurdeosDataset, self).__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
-
-    @property
-    def raw_file_names(self):
-        return []
-    @property
-    def processed_file_names(self):
-        return ['Burdeos.dataset']
-
-    def download(self):
-        pass
-    
-    # def process(self):
-    #     data, slices = self.collate(dataset)
-    #     torch.save((data, slices), self.processed_paths[0]) 
 #%% Geometric Point Net
 
 class GeometricPointNet(torch.nn.Module):

@@ -16,7 +16,7 @@ def parseArguments():
     parser.add_argument("--epoch", "-e",  type=str, default='0',
                         help="Epoch the results are coming from")
     parser.add_argument("--n_images", "-ni",  type=int, default=5,
-                        help="Number of images")
+                        help="Number of images to plot")
     
     args = parser.parse_args()
 
