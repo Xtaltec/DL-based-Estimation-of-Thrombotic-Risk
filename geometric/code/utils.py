@@ -20,21 +20,21 @@ def parseArguments():
                         help="Choose the name of the group of the runs.")
     parser.add_argument("--data", "-d",  nargs='+', type=str, default=['ECAP','ECAP_Log','ECAP_Rotated','ECAP_Rotated_Log'],
                         help="Choose dataset to be employed when running the code.")
-    parser.add_argument("--path", "-p",  type=str, default='C:\\Users\\Xabier\\PhD\\Frontiers\\GitHub\\geometric',#'D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
+    parser.add_argument("--path", "-p",  type=str, default='D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
                         help="Base path with the code and data folders")
-    parser.add_argument("--folds", "-f", type=int, default=2,#1,
+    parser.add_argument("--folds", "-f", type=int, default=8,
                         help="Number of folds if cross-validation == True (Not list).")
-    parser.add_argument("--num_epoch", "-ep",  nargs='+', type=int, default=[2],#100],
+    parser.add_argument("--num_epoch", "-ep",  nargs='+', type=int, default=[100],
                         help="Number of epochs")
     parser.add_argument("--learn_rate", "-lr",  nargs='+', type=float, default=[0.001],
                         help="Learning rate")
-    parser.add_argument("--batch_size", "-bs", nargs='+',type=int, default=[2],#16],
+    parser.add_argument("--batch_size", "-bs", nargs='+',type=int, default=[16],
                         help="Number of folds if cross-validation == True")
     parser.add_argument("--drop_rate", "-dr",  nargs='+', type=float, default=[0.1],
                         help="Drop rate")
-    parser.add_argument("--depth", "-dp",  nargs='+', type=int, default=[2],#12],
+    parser.add_argument("--depth", "-dp",  nargs='+', type=int, default=[12],
                         help="Number of hidden layers")
-    parser.add_argument("--hidden", "-hid",  nargs='+', type=int, default=[2],#32],
+    parser.add_argument("--hidden", "-hid",  nargs='+', type=int, default=[32],
                         help="Depth of hidden layers")
     parser.add_argument("--activation", "-act",  nargs='+', type=str, default=['elu'],
                         help="Activation function. 'elu' or 'relu'")
@@ -50,7 +50,7 @@ def parseArguments():
                         help="Random seed")
     parser.add_argument("--loss_func", "-loss",  nargs='+', type=str, default=['L1'],
                         help="Loss function. Options 'L1','SmoothL1','MSE")
-    parser.add_argument("--cross", "-cr", type=bool, default=True,#False,
+    parser.add_argument("--cross", "-cr", type=bool, default=False,
                         help="Cross-validation or hyperparameter tuning (Not list)")
     parser.add_argument("--results_by", "-rb",  nargs='+', type=str, default=[],
                         help="Activation function. 'elu' or 'relu'")

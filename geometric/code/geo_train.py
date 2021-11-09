@@ -64,8 +64,8 @@ if __name__ == "__main__":
     
     #%% Dataframe to store all the data according to the employed keys
     
-    if parameters['cross'][0] == False and parameters['folds'][0]!=1 :
-        raise ValueError('If not cross-validation folds should be == 1')
+    if parameters['cross'][0] == False: # Ensure that folds = 1 if cross = False
+        parameters['folds'][0]=1
         
     name_list = np.array([1 if len(i)>1 else 0 for i in parameters.values()]).astype(bool) # Array with the differential hyperparameters
     name_list[0]=1 # Always use at least the dataset as run name
