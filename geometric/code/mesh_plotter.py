@@ -25,7 +25,7 @@ def parseArguments():
 args = parseArguments()
 
 # Load the arrays with the prediction data for this timestep
-temp = np.load(join(args.path,'Temp.npz'))
+temp = np.load(join(args.path,'Temp.npz'),allow_pickle=True)
 labels,predictions,indices,coord,connectivity = temp['labels'],temp['predictions'],temp['indices'],temp['coord'],temp['connectivity']
 
 # Start xvfb if Sys == Linux

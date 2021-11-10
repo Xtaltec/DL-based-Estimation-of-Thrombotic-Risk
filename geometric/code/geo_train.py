@@ -280,7 +280,7 @@ if __name__ == "__main__":
             for j in range(len(df_cross)):
                 print(str(j)+': {:.5f}'.format(df_cross.iloc[j][1]))
                 
-            run.finish() # Cleanup and mark successfull completion
+        run.finish() # Cleanup and mark successfull completion
             
     #%% Final group summary grouped by hyperparameters
       

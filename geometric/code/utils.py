@@ -18,9 +18,9 @@ def parseArguments():
                         help="Choose the name of the project to be logged into W&B.")
     parser.add_argument("--group", "-gr",  type=str, default='Prueba',
                         help="Choose the name of the group of the runs.")
-    parser.add_argument("--data", "-d",  nargs='+', type=str, default=['ECAP','ECAP_Log','ECAP_Rotated','ECAP_Rotated_Log'],
+    parser.add_argument("--data", "-d",  nargs='+', type=str, default=['ECAP'],
                         help="Choose dataset to be employed when running the code.")
-    parser.add_argument("--path", "-p",  type=str, default='D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',
+    parser.add_argument("--path", "-p",  type=str, default='D:\\PhD\\DL\\Frontiers\\GitHub\\geometric',#'C:\\Users\\Xabier\\PhD\\Frontiers\\GitHub\\geometric',
                         help="Base path with the code and data folders")
     parser.add_argument("--folds", "-f", type=int, default=8,
                         help="Number of folds if cross-validation == True (Not list).")
@@ -136,8 +136,7 @@ def predict(m,dev,loader,setup):
     return labels,predictions,indices
 
 def thresholding(pred,label,thres):
-    
-    # Given the threshold return boolean matrix with 1 if > thres 0 if <= 1
+    """ Given the threshold return boolean matrix with 1 if > thres 0 if <= 1 """
     
     conf =[]
     
@@ -187,7 +186,8 @@ def result_plotting(n_images,epoch,dataset,result_path,labels,predictions,indice
         connectivity += [dataset[or_case].connectivity.numpy()]
 
     # Save npz array with the results of this iteration
-    np.savez(join(result_path,'Temp.npz'),labels=labels,predictions=predictions,indices=indices,coord=coord,connectivity=connectivity)
+    np.savez(join(result_path,'Temp.npz'),labels=n(labels),predictions=n(predictions)
+             ,indices=n(indices),coord=n(coord),connectivity=n(connectivity))
 
     # Call mesh_plotter to create the figures
     subprocess.call(['python', 'mesh_plotter.py','-p',result_path,'-e',str(epoch),'-ni',str(n_images)])
@@ -196,14 +196,15 @@ def result_plotting(n_images,epoch,dataset,result_path,labels,predictions,indice
     images = wandb.Image(join(result_path,'Result_'+str(epoch).zfill(3)+'.png'),caption = "Epoch "+str(epoch))
     wandb.log({"Prediction": images})
 
-
-# Defining the InMemoryDataset class
 class ECAPdataset(InMemoryDataset):
+    """ Define an InMemoryDataset class """
     def __init__(self, input_data, output_path, transform=None, pre_transform=None):
         super(ECAPdataset, self).__init__(None, transform, pre_transform)
         self.data, self.slices = self.collate(input_data)
-        
 
+def n(l):
+    """ Convert list to object np array to avoid warnings """
+    return np.array(l,dtype=object)
 
 def flatten(a, start=0, count=2):
     """ Reshapes numpy array a by combining count dimensions, 
